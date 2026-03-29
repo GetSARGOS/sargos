@@ -30,19 +30,30 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.redirect(`${origin}/auth/auth-code-error`)
   }
 
-  // Successful exchange. Determine the correct base URL for redirect.
-  // In production behind Vercel's edge network, the origin from the Request
-  // object may be the internal host. Use x-forwarded-host when present.
+  // Determine where to send the user after a successful exchange.
+  // New users (no org membership yet) go to /onboarding.
+  // Returning users go to the `next` param (default: /dashboard).
+  const { data: membership } = await supabase
+    .from('organization_members')
+    .select('id')
+    .limit(1)
+    .maybeSingle()
+
+  const destination = membership ? next : '/onboarding'
+
+  // Determine the correct base URL.
+  // In production behind Vercel's edge network the origin from the Request
+  // object may be the internal host — use x-forwarded-host when present.
   const forwardedHost = request.headers.get('x-forwarded-host')
   const isLocalEnv = process.env.NODE_ENV === 'development'
 
   if (isLocalEnv) {
-    return NextResponse.redirect(`${origin}${next}`)
+    return NextResponse.redirect(`${origin}${destination}`)
   }
 
   if (forwardedHost) {
-    return NextResponse.redirect(`https://${forwardedHost}${next}`)
+    return NextResponse.redirect(`https://${forwardedHost}${destination}`)
   }
 
-  return NextResponse.redirect(`${origin}${next}`)
+  return NextResponse.redirect(`${origin}${destination}`)
 }

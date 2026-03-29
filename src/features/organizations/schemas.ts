@@ -29,4 +29,10 @@ export const CreateOrganizationSchema = z.object({
   admin_phone: z.string().max(20).trim().optional(),
 })
 
+// Output type — what the schema produces after validation and defaults are applied.
+// Used by business logic and API routes.
 export type CreateOrganizationInput = z.infer<typeof CreateOrganizationSchema>
+
+// Input type — what the schema accepts before defaults are applied.
+// Used by react-hook-form so useForm<> matches the Resolver type from zodResolver.
+export type CreateOrganizationFormInput = z.input<typeof CreateOrganizationSchema>
