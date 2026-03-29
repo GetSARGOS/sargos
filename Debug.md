@@ -178,8 +178,6 @@ Tested by: __Tyler Alex__ Date: __3/29/26__
 
 ---
 
----
-
 ## Session 2 — POST /api/organizations (Feature 1 API Layer)
 
 ### What Was Built
@@ -211,7 +209,7 @@ Before running tests, confirm:
 
 ### TEST 2: Unit Tests Pass
 
-**Purpose:** Verify all automated tests pass in CI.
+**Purpose:** Verify all automated tests pass.
 **Tool:** Terminal
 **Steps:**
 1. Run `npm test`
@@ -279,7 +277,7 @@ curl -X POST http://localhost:3000/api/organizations \
 { "data": null, "error": "Validation failed", "meta": { "issues": [...] } }
 ```
 HTTP status: `400`. The `issues` array should contain at least 3 violations (name too short, slug pattern, display_name too short).
-**Pass / Fail:** [ ]
+**Pass / Fail:** [ Pass ]
 **Notes:** _______________
 
 ---
@@ -312,7 +310,7 @@ curl -X POST http://localhost:3000/api/organizations \
 { "data": { "organizationId": "<uuid>", "memberId": "<uuid>" }, "error": null, "meta": null }
 ```
 HTTP status: `201`
-**Pass / Fail:** [ ]
+**Pass / Fail:** [ Pass ]
 **Notes:** _______________
 
 ---
@@ -330,7 +328,7 @@ HTTP status: `201`
 { "data": null, "error": "This slug is already taken", "meta": null }
 ```
 HTTP status: `409`
-**Pass / Fail:** [ ]
+**Pass / Fail:** [ Pass ]
 **Notes:** _______________
 
 ---
@@ -385,11 +383,267 @@ WHERE slug = 'alpha-sar-team';
 ---
 
 ### Sign-Off
-- [ ] All tests passed
-- [ ] Any failures documented and reported to Claude Code
-- [ ] Migration 006 confirmed applied in Supabase
+- [ passed ] All tests passed
+- [ passed ] Any failures documented and reported to Claude Code
+- [ passed ] Migration 006 confirmed applied in Supabase
 
-Tested by: _______________ Date: _______________
+Tested by: __Tyler Alex__ Date: __3/29/26__
+
+---
+
+## Session 3 — Feature 1 UI (Login / Signup / Onboarding / Dashboard)
+
+### What Was Built
+Authentication UI: /login, /signup, /onboarding (org creation), /dashboard shell. Full flow from account creation through org setup.
+
+### Pre-Test Checklist
+Before running tests, confirm:
+- [ ] Dev server started: `npm run dev`
+- [ ] Supabase Auth redirect URL configured: Dashboard → Authentication → URL Configuration → `http://localhost:3000/auth/callback`
+- [ ] A real email address is available to receive confirmation links
+
+---
+
+### TEST 1: Unauthenticated Redirect
+
+**Purpose:** Verify the proxy redirects unauthenticated users away from protected routes.
+**Tool:** Browser (incognito window)
+**Steps:**
+1. Open an incognito/private browser window
+2. Navigate to `http://localhost:3000/dashboard`
+
+**Expected Result:** Redirected to `/login?next=/dashboard`. No dashboard content visible.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 2: Authenticated Redirect From Login Page
+
+**Purpose:** Verify that a logged-in user visiting /login is sent to /dashboard instead.
+**Tool:** Browser
+**Steps:**
+1. Sign in successfully (see TEST 10)
+2. While still logged in, navigate to `http://localhost:3000/login`
+
+**Expected Result:** Immediately redirected to `/dashboard`.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 3: Signup Form Validation
+
+**Purpose:** Verify client-side Zod validation on the signup form.
+**Tool:** Browser
+**Steps:**
+1. Visit `http://localhost:3000/signup`
+2. Submit the form with an empty email field
+3. Submit with a weak password (fewer than 8 chars, no uppercase, no number)
+4. Submit with mismatched passwords
+
+**Expected Result:**
+- "Please enter a valid email address" error on email field
+- Password validation errors (min 8 chars, requires uppercase, requires number)
+- "Passwords do not match" error on confirm password field
+
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 4: Signup Success
+
+**Purpose:** Verify the signup form submits and transitions to the "check your email" state.
+**Tool:** Browser
+**Steps:**
+1. Visit `http://localhost:3000/signup`
+2. Fill in: a real email address, a strong password (e.g. `Test1234!`), and confirm password
+3. Click "Create account"
+
+**Expected Result:**
+- "Check your email" state shown with the submitted email address
+- Confirmation email arrives in inbox
+
+**Pass / Fail:** [ Pass ]
+**Notes:** Received a Supabase Auth email to my junk folder
+
+---
+
+### TEST 5: Email Confirmation → Onboarding Redirect
+
+**Purpose:** Verify the auth callback redirects a new user (no org) to /onboarding.
+**Tool:** Browser + email client
+**Steps:**
+1. Click the confirmation link from the email received in TEST 4
+
+**Expected Result:**
+- Browser redirects to `http://localhost:3000/onboarding`
+- Auth session is active (DevTools → Application → Cookies: Supabase auth cookie present)
+
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 6: Onboarding Form Validation
+
+**Purpose:** Verify client-side Zod validation on the org creation form.
+**Tool:** Browser
+**Steps:**
+1. On `/onboarding`, click "Create organization" without filling any fields
+
+**Expected Result:** Validation errors on: Organization name (required), URL handle (required), Display name (required).
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 7: Slug Auto-Generation and Manual Override
+
+**Purpose:** Verify the slug field auto-populates from the org name and locks on manual edit.
+**Tool:** Browser
+**Steps:**
+1. On `/onboarding`, type "King County Search & Rescue" in the Organization Name field
+
+**Expected Result:**
+- URL handle auto-fills with `king-county-search-rescue`
+- Preview below the field shows `sargos.app/king-county-search-rescue`
+
+2. Clear the URL handle field, type `kc-sar` manually, then click elsewhere
+3. Change the Organization Name to something different
+
+**Expected Result:**
+- URL handle stays as `kc-sar` (slug lock active)
+- Changing the org name does NOT overwrite the manual slug
+
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 8: Successful Org Creation
+
+**Purpose:** Full happy path — org creation form submits and redirects to the dashboard.
+**Tool:** Browser
+**Steps:**
+1. Fill the onboarding form:
+   - Organization name: "Test SAR Team"
+   - URL handle: `test-sar-[your-initials]` (make it unique to avoid a 409)
+   - Unit type: Search & Rescue
+   - Display name: "Your Name"
+2. Click "Create organization"
+
+**Expected Result:**
+- Brief loading state ("Creating organization…")
+- Redirect to `/dashboard`
+- Dashboard shows: "Welcome, Your Name" and "Test SAR Team · SAR"
+- Empty incident state visible
+
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 9: Duplicate Slug Error
+
+**Purpose:** Verify the form surfaces a 409 conflict as a field-level error.
+**Tool:** Browser
+**Steps:**
+1. Sign out (clear cookies or open a fresh incognito window with a new account)
+2. Complete signup and email confirmation for a second account
+3. On `/onboarding`, enter the same URL handle used in TEST 8
+4. Submit the form
+
+**Expected Result:** "This URL handle is already taken. Please choose another." error on the URL handle field.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 10: Login Form — Happy Path
+
+**Purpose:** Verify a returning user can sign in and reach the dashboard.
+**Tool:** Browser
+**Steps:**
+1. Visit `http://localhost:3000/login`
+2. Enter the email and password from TEST 4
+3. Click "Sign in"
+
+**Expected Result:**
+- Redirect to `/dashboard`
+- Dashboard shows the org name created in TEST 8
+
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 11: Login With Wrong Password
+
+**Purpose:** Verify incorrect credentials produce an error without exposing details.
+**Tool:** Browser
+**Steps:**
+1. Visit `http://localhost:3000/login`
+2. Enter a valid email but the wrong password
+3. Click "Sign in"
+
+**Expected Result:**
+- Error alert: "Invalid email or password."
+- User remains on the login page
+
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 12: Auth Error Page
+
+**Purpose:** Verify the auth error page renders correctly for expired or invalid links.
+**Tool:** Browser
+**Steps:**
+1. Navigate directly to `http://localhost:3000/auth/auth-code-error`
+
+**Expected Result:** Page displays "Sign-in link expired" with a "Request a new link" button and a "Back to sign in" link.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 13: Error Boundary
+
+**Purpose:** Verify the dashboard error boundary catches thrown errors without a white screen.
+**Tool:** Browser + code editor
+**Steps:**
+1. Temporarily add `throw new Error('test boundary')` to `src/app/dashboard/page.tsx` before the return statement
+2. Visit `/dashboard`
+
+**Expected Result:** Error boundary UI shown: "Dashboard error" with a "Reload" button. App does not crash to a white screen.
+
+3. Remove the temporary throw statement after verifying.
+
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### Supabase Verification
+
+After completing Tests 4–8, verify in the Supabase Dashboard:
+
+- **Authentication → Users**: New user visible with confirmed email status
+- **Table Editor → organizations**: New row with correct name, slug, and unit_type
+- **Table Editor → organization_members**: New row with `role: org_admin` and `is_active: true`
+- **Table Editor → audit_log**: `ORGANIZATION_CREATED` entry present with the org's ID
+
+---
+
+### Sign-Off
+- [ passed ] All 13 tests passed
+- [ passed ] Any failures documented and reported to Claude Code
+- [ passed ] Supabase Dashboard verification complete
+
+Tested by: __Tyler Alex__ Date: __3/29/26__
 
 ---
 
@@ -407,53 +661,65 @@ Claude Code uses this template when appending a new session's test instructions:
 
 ### Pre-Test Checklist
 Before running tests, confirm:
-- [ ] App is running locally (`npm run dev`)
-- [ ] Supabase local or cloud instance is connected
+- [ ] Dev server started: `npm run dev`
+- [ ] Supabase local or cloud instance connected
 - [ ] Test user accounts exist (see Testing Environment Setup above)
-- [ ] Any new environment variables are set in `.env.local`
+- [ ] Any new environment variables set in `.env.local`
 
 ---
 
-### Test Suite [Feature Name]
+### TEST N: [Test Name]
 
-#### TEST [N]: [Test Name]
 **Purpose:** [What this test verifies]
-**User:** [Which test account to use]
+**Tool:** [Browser / Terminal / curl / Supabase SQL Editor]
 **Steps:**
 1. [Exact step]
 2. [Exact step]
 3. [Exact step]
+
 **Expected Result:** [Exactly what should happen]
 **Pass / Fail:** [ ]
 **Notes:** _______________
 
-#### TEST [N]: Cross-Organization Isolation
-**Purpose:** Verify that Org B cannot see Org A's data
-**User:** admin@betasar.test
+---
+
+### TEST N: Cross-Organization Isolation
+
+**Purpose:** Verify that Org B cannot see Org A's data.
+**Tool:** Browser
 **Steps:**
 1. Log in as admin@betasar.test
-2. Attempt to access [specific resource from Org A] directly via URL
-3. Open browser DevTools → Network tab → inspect any API responses
-**Expected Result:** 0 records returned, or 403/404 response. No Org A data visible under any circumstance.
+2. Attempt to access [specific Org A resource] directly via URL
+3. Open DevTools → Network tab → inspect API responses
+
+**Expected Result:** 0 records returned, or 403/404 response. No Org A data visible.
 **Pass / Fail:** [ ]
 **Notes:** _______________
 
-#### TEST [N]: Unauthenticated Access Attempt
-**Purpose:** Verify protected routes reject unauthenticated users
-**User:** Logged out / incognito window
+---
+
+### TEST N: Unauthenticated Access
+
+**Purpose:** Verify protected routes reject unauthenticated users.
+**Tool:** Browser (incognito window)
 **Steps:**
 1. Open an incognito browser window
-2. Attempt to navigate directly to [protected route URL]
+2. Navigate directly to [protected route URL]
+
 **Expected Result:** Redirected to login page. No data visible.
 **Pass / Fail:** [ ]
 **Notes:** _______________
 
-#### TEST [N]: Role Restriction
-**Purpose:** Verify lower-privilege roles cannot access higher-privilege actions
-**User:** field@alphasar.test
+---
+
+### TEST N: Role Restriction
+
+**Purpose:** Verify lower-privilege roles cannot perform higher-privilege actions.
+**Tool:** Browser
 **Steps:**
 1. Log in as field@alphasar.test
 2. Attempt to [action that requires IC or Admin role]
+
 **Expected Result:** Action is unavailable or returns a 403. No data exposed.
 **Pass / Fail:** [ ]
 **Notes:** _______________
@@ -461,39 +727,42 @@ Before running tests, confirm:
 ---
 
 ### Database Verification
-Run these checks directly in the Supabase SQL editor:
 
 ```sql
 -- [Description of what this query verifies]
 [SQL query];
--- Expected result: [what you should see]
+-- Expected: [what you should see]
 ```
 
 ---
 
 ### Real-Time Sync Verification (if applicable)
+
 1. Open the app in Browser A logged in as ic@alphasar.test
 2. Open the app in Browser B logged in as ops@alphasar.test
-3. [Specific action in Browser A]
-4. Expected: [Specific change appears in Browser B within 2 seconds without refresh]
+3. [Action in Browser A]
+4. Expected: [Change appears in Browser B within 2 seconds without refresh]
+
 **Pass / Fail:** [ ]
 
 ---
 
 ### Offline Behavior Verification (if applicable)
+
 1. Load the feature in the browser
-2. Open DevTools → Network tab → set throttling to "Offline"
+2. DevTools → Network → set throttling to "Offline"
 3. [Specific action]
 4. Expected: [What should happen offline]
 5. Re-enable network
-6. Expected: [How sync should resolve]
+6. Expected: [How sync resolves]
+
 **Pass / Fail:** [ ]
 
 ---
 
 ### Stress / Edge Case Tests
 
-#### EDGE [N]: [Edge Case Name]
+#### EDGE N: [Edge Case Name]
 **Steps:** [How to trigger it]
 **Expected Result:** [Graceful handling — no crash, no data loss, clear error message]
 **Pass / Fail:** [ ]

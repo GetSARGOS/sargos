@@ -261,3 +261,128 @@ Next: Apply migration 006 in Supabase SQL Editor, then build Feature 1 UI — th
 - Code Quality: Zero TS errors, no dead code, naming conventions followed, business logic in /features/*/logic not in route handler, no file exceeds 400 lines.
 
 ---
+
+## Session 2 — Debug Addendum (2026-03-29)
+
+### Manual Test Results (all PASS)
+- Test 1: Migration 006 applied in Supabase — PASS
+- Test 2: 30 unit tests — PASS
+- Test 3: TypeScript strict mode zero errors — PASS
+- Test 4: Unauthenticated request returns 401 — PASS
+- Test 5: Invalid input returns 400 with 3 Zod issues — PASS
+- Test 6: Valid org creation returns 201 with organizationId + memberId — PASS
+- Test 7: Duplicate slug returns 409 — PASS
+- Cross-org RLS isolation: Org B user cannot see Org A data — PASS
+
+### Additional Files Created
+- `src/app/api/dev/signin/route.ts` — dev-only sign-in helper for obtaining session cookies during manual curl testing. Guarded by `NODE_ENV !== 'development'`. **Must be deleted before any production deploy.**
+
+### Other Changes
+- `.gitignore` updated to exclude test artifacts (body.json, signin.json, cookies.txt, cookies-orgb.txt) and `.claude/`
+- Git branching established: `dev` and `feature/org-creation-api` branches created from `main`. All Session 1+2 work committed to `feature/org-creation-api`.
+
+### Known Issues — Updated
+- **HIGH — CARRY FORWARD**: `src/app/api/dev/signin/route.ts` must be deleted before production deploy.
+- **HIGH — CARRY FORWARD**: 5 high-severity vulnerabilities in next-pwa@5.6.0 (build-time transitive). Must resolve before production deploy.
+
+### Note on RLS Testing in Supabase SQL Editor
+The SQL Editor runs as `postgres` (superuser, bypasses RLS). To properly impersonate a user: `BEGIN; SELECT set_config('request.jwt.claims', '{"sub":"<uid>","role":"authenticated"}', true); SET LOCAL ROLE authenticated; <query>; ROLLBACK;`
+
+---
+---
+
+## Session 3 — 2026-03-29
+
+### What Was Built
+Feature 1 UI complete: signup page, login page, onboarding (org creation) page, and an empty dashboard shell. Auth forms use React Hook Form + Zod + server actions. The auth callback now redirects new users to /onboarding based on org membership. Error boundaries added to all three new routes.
+
+### Feature Reference
+Feature: Feature 1 — Organization Creation + Onboarding (UI layer)
+Status: Partial — Signup, login, onboarding form, and dashboard shell complete. No Playwright e2e tests yet. No password reset flow yet.
+
+### Files Created or Modified
+- `src/components/ui/form.tsx` — shadcn Form component written manually (not available via shadcn@latest CLI with radix-nova style); wraps react-hook-form with FormField/FormItem/FormLabel/FormControl/FormDescription/FormMessage
+- `src/components/ui/input.tsx` — shadcn Input (installed via CLI)
+- `src/components/ui/label.tsx` — shadcn Label (installed via CLI)
+- `src/components/ui/card.tsx` — shadcn Card (installed via CLI)
+- `src/components/ui/select.tsx` — shadcn Select (installed via CLI)
+- `src/features/auth/schemas.ts` — LoginSchema + SignupSchema (Zod v4) with types
+- `src/features/auth/actions/sign-up.ts` — server action: calls supabase.auth.signUp(); returns { success } or { error }
+- `src/features/auth/actions/sign-in.ts` — server action: calls signInWithPassword(); redirects to /dashboard on success
+- `src/features/auth/components/login-form.tsx` — client login form (RHF + Zod + useTransition)
+- `src/features/auth/components/signup-form.tsx` — client signup form; shows "check email" state on success
+- `src/app/(auth)/layout.tsx` — centered card layout with SARGOS branding
+- `src/app/(auth)/login/page.tsx` — login page (server component wrapping LoginForm)
+- `src/app/(auth)/signup/page.tsx` — signup page (server component wrapping SignupForm)
+- `src/app/(auth)/error.tsx` — error boundary for auth route group
+- `src/app/auth/auth-code-error/page.tsx` — auth error page (expired/invalid confirmation link)
+- `src/features/organizations/schemas.ts` — added CreateOrganizationFormInput (z.input<> type for react-hook-form compatibility)
+- `src/features/organizations/components/create-org-form.tsx` — org creation client form; auto-generates slug from name; calls POST /api/organizations; redirects to /dashboard on success
+- `src/app/onboarding/page.tsx` — server component; checks auth + existing org membership; renders CreateOrgForm
+- `src/app/onboarding/error.tsx` — error boundary for onboarding route
+- `src/app/dashboard/page.tsx` — server component; checks auth + org membership → redirects to /onboarding if none; renders org name + empty incident state
+- `src/app/dashboard/error.tsx` — error boundary for dashboard route
+- `src/app/auth/callback/route.ts` — updated to check org membership after code exchange; redirects to /onboarding for new users
+- `src/app/layout.tsx` — updated metadata title/description from Next.js defaults to SARGOS branding
+
+### Database Changes
+- None this session. All existing migrations apply.
+
+### Decisions Made
+- Decision: shadcn `form` component not available via `npx shadcn@latest add form` with radix-nova style — written manually.
+  Reason: The CLI produced no output and no files. Wrote the form.tsx manually following the radix-nova pattern (Slot.Root from "radix-ui", function-style components, data-slot attributes).
+
+- Decision: `z.input<typeof CreateOrganizationSchema>` used for the `useForm<>` type parameter in CreateOrgForm.
+  Reason: `@hookform/resolvers/zod` v5 returns `Resolver<z4.input<T>>` for Zod v4 schemas (the INPUT type, before defaults are applied). `useForm<OutputType>` would cause a TypeScript mismatch. Must export both `CreateOrganizationInput` (output, for API) and `CreateOrganizationFormInput` (input, for form). This is a Zod v4 + @hookform/resolvers v5 compatibility pattern.
+
+- Decision: Auth callback checks org membership to determine redirect destination.
+  Reason: After email confirmation, new users have a session but no org. Redirecting them to /dashboard would require an extra redirect to /onboarding. Checking in the callback avoids the double redirect for the most common new-user path.
+
+- Decision: Dashboard page also checks org membership (belt-and-suspenders).
+  Reason: The callback check covers the email confirmation flow. The dashboard check handles edge cases (direct navigation, future admin revocation, etc.).
+
+### Deviations From Plan
+- Added error boundaries (error.tsx) for auth, onboarding, and dashboard routes.
+  Reason: DoD requires error boundaries on every major UI section. Not optional.
+
+### Known Issues / Open Items
+- **MEDIUM — OPEN**: No Playwright e2e tests for the login/signup/onboarding flow. DoD requires e2e tests for critical user flows. Blocked until Playwright is configured. Next session: configure Playwright and add e2e tests.
+- **LOW — OPEN**: Button touch targets are 32px (h-8 default in radix-nova style), below the 44px minimum required for field/mobile use. For auth pages (desktop use), this is acceptable. When building field-facing features (resource tracking, incident board), override with explicit h-11 (44px) buttons.
+- **HIGH — CARRY FORWARD**: `src/app/api/dev/signin/route.ts` must be deleted before production deploy.
+- **HIGH — CARRY FORWARD**: 5 high-severity vulnerabilities in next-pwa@5.6.0 (build-time transitive). Must resolve before production deploy.
+
+### Environment Variables Added
+- None.
+
+### What To Do Next Session
+Next: Configure Playwright and write e2e tests for the full signup → onboarding → dashboard flow. Then continue to Feature 6 (Billing) or Feature 2 (Real-Time Resource Tracking) depending on build priority. Ask the user which to prioritize. If Playwright is skipped: start Feature 6 — Stripe integration, subscription table, and billing portal link.
+
+### Definition of Done Status
+- Database: N/A — no new tables this session.
+- Backend/API: N/A — no new API routes this session. Auth server actions: input validated (Zod), no PII logged, no raw errors exposed. PASS.
+- Frontend: All data states handled — PASS (forms: error+loading; dashboard: empty state+org info; server components redirect on error). Error boundaries: PASS (error.tsx on auth, onboarding, dashboard). Keyboard nav: PASS (shadcn components). Labels: PASS (FormLabel with htmlFor). Touch targets: LOW — buttons are 32px, below 44px minimum (noted above). TypeScript: PASS (zero errors).
+- Real-Time & Offline: N/A — auth/onboarding are not field-facing features.
+- Notifications: N/A.
+- Testing: 30 unit tests pass. Playwright e2e: PENDING (not yet configured).
+- Security: No secrets in code PASS. service_role not in client PASS. Input validated PASS. No SQL interpolation PASS. npm audit: known issue (next-pwa, carry forward).
+- Accessibility: shadcn components use Radix UI primitives which are ARIA-compliant. No automated axe check run this session (PENDING).
+- Code Quality: Zero TS errors, no dead code, naming conventions followed, business logic in /features/*/actions not in pages, no file exceeds 400 lines.
+
+---
+
+## Session 3 — Debug Addendum (2026-03-29)
+
+### Manual Test Results
+- All 13 tests — PASS (13/13)
+
+### Issues Found and Resolved
+- `src/app/page.tsx` was still the default Next.js template — replaced with a redirect to `/dashboard`. The proxy handles the unauthenticated case before the page is reached.
+- Test 5 (email confirmation): Supabase confirmation email was delivered to junk mail. The `/auth/callback` flow worked correctly once the link was clicked. Note for future users: add `noreply@mail.supabase.io` to safe senders, or configure custom SMTP (Resend) to improve deliverability.
+- Supabase free-tier SMTP rate limit (429 — 4 emails/hour) was hit during re-testing after user deletion. This blocked re-signup attempts. Workaround: disable email confirmation in Supabase for local dev, or use custom SMTP. Email confirmation is currently DISABLED — must be re-enabled before production.
+
+### Known Issues — Updated
+- **HIGH — CARRY FORWARD**: Email confirmation is currently DISABLED in Supabase (Authentication → Providers → Email → Confirm email: off). Must be re-enabled with a custom SMTP provider (Resend) before any real users or production deploy.
+- **HIGH — CARRY FORWARD**: `src/app/api/dev/signin/route.ts` must be deleted before production deploy.
+- **HIGH — CARRY FORWARD**: 5 high-severity vulnerabilities in next-pwa@5.6.0 (build-time transitive). Must resolve before production deploy.
+
+---
