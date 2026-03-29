@@ -40,3 +40,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# claude code
+.claude/
+
+# test artifacts
+body.json
+signin.json
+cookies.txt
+cookies-orgb.txt
