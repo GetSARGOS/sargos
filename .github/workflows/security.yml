@@ -1,0 +1,44 @@
+name: Security
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  semgrep:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Semgrep
+        run: >
+          semgrep scan
+          --config=p/typescript
+          --config=p/nextjs
+          --config=p/owasp-top-ten
+          --error
+
+  audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      # TODO: tighten to --audit-level=high once next-pwa@5.6.0 is replaced
+      - run: npm audit --audit-level=critical
+
+  secrets:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

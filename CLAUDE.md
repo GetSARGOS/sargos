@@ -1,11 +1,11 @@
 @AGENTS.md
+@claude_rules.md
 
 # Claude Code Instructions — SAR SaaS Platform
 
 ## Read These Files At The Start Of Every Session (in this order):
-1. `claude_rules.md` — non-negotiable rules for this project
-2. `build_log.md` — read the LAST ENTRY ONLY to understand current state
-3. Execute the "What To Do Next Session" instruction from the last build log entry
+1. `build_log.md` — read the LAST ENTRY ONLY to understand current state
+2. Execute the "What To Do Next Session" instruction from the last build log entry
 
 ## At The End Of Every Session:
 1. Verify the Definition of Done checklist in `definition_of_done.md`

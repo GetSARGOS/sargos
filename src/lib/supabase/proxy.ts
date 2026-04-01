@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   '/auth/auth-code-error',
   '/login',
   '/signup',
+  '/check-in',  // volunteer QR check-in — no account needed
 ]
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {

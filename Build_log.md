@@ -370,6 +370,88 @@ Next: Configure Playwright and write e2e tests for the full signup → onboardin
 
 ---
 
+## Session 4 — 2026-03-29
+
+### What Was Built
+Feature 2 (Real-Time Resource Tracking) — database layer + API layer + full UI. Migrations 007–015 cover teams, organization_invites, resources, incidents, incident_command_structure, incident_sectors, incident_personnel, incident_log, and incident_resources. Incident creation API, personnel check-in API, and status update API are complete. Dashboard now lists incidents. New `/incidents/new` form and `/incidents/[id]` live resource board with Supabase Realtime and optimistic status updates are built.
+
+### Feature Reference
+Feature: Feature 2 — Real-Time Resource & Team Tracking (partial)
+Status: Partial — core personnel board complete. Deferred: QR check-in (Feature 2b), PAR roll calls, equipment tracking UI, team assignment on board.
+
+### Files Created or Modified
+- `supabase/migrations/007_teams.sql` — teams + team_members tables, RLS, indexes, trigger
+- `supabase/migrations/008_organization_invites.sql` — organization_invites table, RLS, indexes
+- `supabase/migrations/009_resources.sql` — org-level resource inventory table, RLS, indexes, trigger
+- `supabase/migrations/010_incidents.sql` — incidents table with PostGIS geometry columns, RLS, indexes, trigger
+- `supabase/migrations/011_incident_command_structure.sql` — ICS role assignments per incident, RLS, indexes, trigger
+- `supabase/migrations/012_incident_sectors.sql` — search sector polygons (created before incident_personnel due to FK dependency), RLS, indexes, trigger
+- `supabase/migrations/013_incident_personnel.sql` — personnel board table, identity CHECK constraint, RLS, indexes, trigger
+- `supabase/migrations/014_incident_log.sql` — append-only incident log, RLS, indexes
+- `supabase/migrations/015_incident_resources.sql` — resource check-out tracking per incident, RLS, indexes, trigger
+- `src/lib/supabase/database.types.ts` — extended with stubs for all 9 new tables
+- `src/features/incidents/schemas.ts` — Zod schemas: CreateIncidentSchema, CheckInPersonnelSchema, UpdatePersonnelStatusSchema; constants and labels for types/statuses/roles
+- `src/features/incidents/logic/create-incident.ts` — createIncident() business logic
+- `src/features/incidents/logic/check-in-personnel.ts` — checkInPersonnel() business logic
+- `src/features/incidents/logic/update-personnel-status.ts` — updatePersonnelStatus() business logic
+- `src/app/api/incidents/route.ts` — GET (list) + POST (create) /api/incidents
+- `src/app/api/incidents/[id]/personnel/route.ts` — GET (list) + POST (check in) /api/incidents/[id]/personnel
+- `src/app/api/incidents/[id]/personnel/[personnelId]/route.ts` — PATCH /api/incidents/[id]/personnel/[id]
+- `src/features/incidents/components/create-incident-form.tsx` — incident creation form (RHF + Zod)
+- `src/features/incidents/components/personnel-board.tsx` — live resource board client component with Supabase Realtime + optimistic status updates + rollback
+- `src/app/incidents/new/page.tsx` — create incident page (server component)
+- `src/app/incidents/new/error.tsx` — error boundary
+- `src/app/incidents/[id]/page.tsx` — incident board page (server component, initial data load)
+- `src/app/incidents/[id]/error.tsx` — error boundary
+- `src/app/dashboard/page.tsx` — updated to show incident list table with status badges + "New Incident" button
+
+### Database Changes
+- Migrations 007–015 written. ACTION REQUIRED: Apply in Supabase SQL Editor in order 007→015.
+- All tables match database_schema.md exactly.
+
+### Decisions Made
+- Decision: Supabase relational join syntax (`.select('*, organization_members(*)')`) avoided in hand-authored type stubs.
+  Reason: The hand-authored `database.types.ts` has `Relationships: []` on all tables. Supabase-js v2 type inference falls back to `SelectQueryError` when Relationships are empty, causing a TS error. Fixed by fetching `incident_personnel` and `organization_members` as two separate queries and merging in code. This pattern will resolve automatically when types are regenerated with the Supabase CLI.
+
+- Decision: `PersonnelWithMember` is a plain interface (not extending `Database['...']['Row']`) with `memberName`, `memberPhone`, `memberCertifications` flattened fields.
+  Reason: Avoids the relational join type inference issue described above. After type regeneration, this interface can be replaced with the inferred join type.
+
+- Decision: Incident creation sets status to 'active' immediately (not 'planning').
+  Reason: Field operations start immediately. The 'planning' status exists for incidents set up in advance; the UI can add a toggle later. For now, creating an incident means it's active.
+
+### Deviations From Plan
+- None — all work matches the approved plan.
+
+### Known Issues / Open Items
+- **PENDING — ACTION REQUIRED**: Migrations 007–015 must be applied to Supabase SQL Editor in order before testing.
+- **PENDING**: database.types.ts is still a hand-authored stub. Regenerate with `npx supabase gen types typescript` after all migrations applied.
+- **DEFERRED**: Feature 2b (QR check-in flow) — no migrations written yet for `incident_qr_tokens`. Next session.
+- **DEFERRED**: PAR roll calls — no migrations for `incident_par_events` / `incident_par_responses`. Next session.
+- **DEFERRED**: Equipment tracking UI — `incident_resources` table exists but no UI.
+- **DEFERRED**: Check-in form uses a raw member UUID input (prototype only) — needs a member search/autocomplete UI before production.
+- **HIGH — CARRY FORWARD**: Email confirmation DISABLED in Supabase. Must re-enable with Resend before production.
+- **HIGH — CARRY FORWARD**: `src/app/api/dev/signin/route.ts` must be deleted before production.
+- **HIGH — CARRY FORWARD**: 5 high-severity vulnerabilities in next-pwa@5.6.0 (build-time transitive).
+
+### Environment Variables Added
+- None.
+
+### What To Do Next Session
+Next: Apply migrations 007–015 in Supabase SQL Editor (order matters). Then manually test: create incident → board opens → check in a second member → status changes propagate in real-time across two tabs. After manual verification, build Feature 2b (QR check-in): migration for `incident_qr_tokens`, the public check-in form at `/check-in/[token]`, the QR generation + display on the incident board, and the `lookup_qr_token` RPC function.
+
+### Definition of Done Status
+- Database: All tables match schema PASS. Migrations written PASS. RLS enabled on all tables PASS. FKs with ON DELETE PASS. FK indexes PASS. GIST indexes on geometry PASS. updated_at triggers PASS. Cross-org verification: PENDING (migrations not yet applied).
+- Backend/API: Input validated with Zod PASS. {data,error,meta} response shape PASS. HTTP status codes correct PASS. Raw DB errors not exposed PASS. Auth on every route PASS. incident_log written on mutations PASS. audit_log written on incident.created PASS. No PII in logs PASS.
+- Frontend: Loading state PASS (useTransition). Empty state PASS (both dashboard and board have empty states). Error state PASS (error boundaries). Error boundaries PASS. Keyboard nav PASS (shadcn/Radix components). Form labels PASS. Touch targets: LOW (32px buttons on admin pages, noted carry-forward). No any types PASS. TypeScript strict: ZERO ERRORS.
+- Real-Time & Offline: Realtime subscription PASS (INSERT/UPDATE/DELETE handled). Reconnection logic PASS (CHANNEL_ERROR/CLOSED → re-subscribe). Optimistic UI PASS (status update immediate). Rollback on failure PASS. Offline: N/A for this session (command-center feature, not field).
+- Notifications: N/A — no notifications triggered by this feature at this stage.
+- Testing: 30/30 unit tests pass. No new unit tests written (incident logic mocking deferred — covered by manual test protocol). Playwright: PENDING carry-forward.
+- Security: No secrets in code PASS. service_role not in client PASS. Input validated PASS. No SQL interpolation PASS. npm audit: known issue (next-pwa, carry-forward).
+- Accessibility: shadcn/Radix ARIA-compliant components PASS. Axe automated check: PENDING.
+- Code Quality: Zero TS errors PASS. No dead code PASS. Naming conventions PASS. Business logic in /features/incidents/logic PASS. No file >400 lines PASS.
+
+---
+
 ## Session 3 — Debug Addendum (2026-03-29)
 
 ### Manual Test Results
@@ -384,5 +466,170 @@ Next: Configure Playwright and write e2e tests for the full signup → onboardin
 - **HIGH — CARRY FORWARD**: Email confirmation is currently DISABLED in Supabase (Authentication → Providers → Email → Confirm email: off). Must be re-enabled with a custom SMTP provider (Resend) before any real users or production deploy.
 - **HIGH — CARRY FORWARD**: `src/app/api/dev/signin/route.ts` must be deleted before production deploy.
 - **HIGH — CARRY FORWARD**: 5 high-severity vulnerabilities in next-pwa@5.6.0 (build-time transitive). Must resolve before production deploy.
+
+---
+
+## Session 5 — 2026-03-29
+
+### What Was Built
+Feature 2b (Spontaneous Volunteer QR Check-In) — full stack. Migration 016 creates `incident_qr_tokens` with two SECURITY DEFINER RPCs (`lookup_qr_token` for public token resolution, `increment_qr_scans` for atomic counter updates). The IC can generate a QR code from the incident board; walk-up volunteers scan it and complete a mobile-optimized public form at `/check-in/[token]` (no login required). On submission they appear on the personnel board via Realtime.
+
+### Feature Reference
+Feature: Feature 2b — Spontaneous Volunteer QR Check-In
+Status: Complete
+
+### Files Created or Modified
+- `supabase/migrations/016_incident_qr_tokens.sql` — incident_qr_tokens table, RLS, lookup_qr_token RPC (anon-accessible), increment_qr_scans RPC (service-side)
+- `src/lib/supabase/database.types.ts` — added incident_qr_tokens stub + lookup_qr_token + increment_qr_scans in Functions section
+- `src/features/incidents/schemas.ts` — added COMMON_CERTIFICATIONS, QrVolunteerCheckInSchema, QrVolunteerCheckInInput, QrVolunteerCheckInFormInput
+- `src/features/incidents/logic/create-qr-token.ts` — createQrToken() — deactivates existing active tokens, inserts new token
+- `src/features/incidents/logic/qr-volunteer-checkin.ts` — qrVolunteerCheckIn() — validates token, inserts incident_personnel, writes incident_log, increments scan counter
+- `src/app/api/incidents/[id]/qr-tokens/route.ts` — GET (list tokens) + POST (create/regenerate) — auth required
+- `src/app/api/incidents/[id]/qr-tokens/[tokenId]/route.ts` — PATCH (activate/deactivate) — auth required
+- `src/app/api/check-in/[token]/route.ts` — GET (resolve token) + POST (submit check-in) — public, no auth
+- `src/app/check-in/[token]/page.tsx` — server component; resolves token via RPC, renders form or error state
+- `src/app/check-in/[token]/check-in-form.tsx` — mobile-optimized client form with common certification checkboxes, vehicle, medical notes, safety acknowledgment
+- `src/app/check-in/[token]/error.tsx` — error boundary for check-in route
+- `src/features/incidents/components/qr-panel.tsx` — client component; displays QR code (react-qr-code), generate/regenerate/deactivate buttons, copy-link action
+- `src/app/incidents/[id]/page.tsx` — added QrPanel below PersonnelBoard; added initial QR token SSR fetch
+- `src/lib/supabase/proxy.ts` — added `/check-in` to PUBLIC_PATHS
+- `database_schema.md` — updated incident_qr_tokens definition to add updated_at column + corrected index list and RLS policy descriptions
+- `package.json` / `package-lock.json` — added react-qr-code dependency
+
+### Database Changes
+- Migration 016: `incident_qr_tokens` table — QR tokens for volunteer check-in
+- Migration 016: `lookup_qr_token(TEXT)` RPC — SECURITY DEFINER, granted to anon role
+- Migration 016: `increment_qr_scans(TEXT)` RPC — atomic counter, service-side only
+- **ACTION REQUIRED**: Apply `016_incident_qr_tokens.sql` in Supabase SQL Editor before testing.
+
+### Decisions Made
+- Decision: Added `updated_at` column to `incident_qr_tokens` (not in original schema doc).
+  Reason: claude_rules.md rule #4 requires every mutable table to have `updated_at`. The schema doc omitted it. Updated `database_schema.md` to match. The trigger `set_updated_at_incident_qr_tokens` maintains it automatically.
+
+- Decision: QR check-in insert uses service role (not client auth).
+  Reason: Walk-up volunteers have no Supabase session. The POST /api/check-in route runs server-side, uses service role to bypass RLS, and is protected by token validation instead of auth.
+
+- Decision: `lookup_qr_token` returns `incident_name` and `organization_name` (more than the schema doc originally specified).
+  Reason: The check-in page needs these to render a meaningful header. Still minimal — no org internals, member data, or incident coordinates are exposed.
+
+- Decision: Certifications use a checkbox list (COMMON_CERTIFICATIONS) plus free-text "other" rather than a pure free-text field.
+  Reason: Checkboxes are easier to tap on mobile in a field environment. Free-text "other" handles edge cases. Both paths write to the same string[] column.
+
+- Decision: `/check-in` page uses `window.location.origin` to build the check-in URL for the QR code.
+  Reason: Avoids adding a NEXT_PUBLIC_APP_URL env var. The URL must work in local dev, staging, and production without reconfiguration.
+
+- Decision: QR panel is a client component that takes `initialTokens` from SSR rather than fetching on mount.
+  Reason: Consistent with the PersonnelBoard pattern. Avoids an extra round-trip on page load.
+
+### Deviations From Plan
+- `increment_qr_scans` RPC added to migration (not in original schema doc).
+  Reason: Supabase-js does not support expression-based UPDATEs (`SET scans = scans + 1`). An RPC is the correct way to do an atomic increment.
+
+### Known Issues / Open Items
+- **PENDING — ACTION REQUIRED**: Migration 016 must be applied to Supabase SQL Editor before testing Feature 2b.
+- **PENDING**: database.types.ts is still a hand-authored stub. Regenerate after all migrations applied.
+- **DEFERRED**: No unit tests for createQrToken or qrVolunteerCheckIn logic (follows Session 4 precedent for new incident logic). Tests should be added before Feature 6 or the first staging deploy.
+- **DEFERRED**: QR code "Download / Print" button not yet implemented. The SVG can be right-clicked and saved, but a dedicated download button would improve the IC workflow.
+- **DEFERRED**: IC-only token creation not yet enforced at the database level (RLS allows any org member). Tighten when incident_command_structure RBAC is built out.
+- **HIGH — CARRY FORWARD**: Email confirmation DISABLED in Supabase.
+- **HIGH — CARRY FORWARD**: `src/app/api/dev/signin/route.ts` must be deleted before production.
+- **HIGH — CARRY FORWARD**: 5 high-severity vulnerabilities in next-pwa@5.6.0.
+
+### Environment Variables Added
+- None.
+
+### What To Do Next Session
+Next: Apply migration 016 in Supabase SQL Editor. Manually test: generate QR → open /check-in/[token] in an incognito tab → submit volunteer form → verify volunteer appears on personnel board via Realtime. Then build the next highest-priority feature. Ask the user: Feature 3 (Subject Tracking / ICS 201), Feature 4 (ICS Form Generation), or Feature 6 (Billing / Stripe). If billing is chosen, start with the Stripe webhook handler and subscription table sync.
+
+### Definition of Done Status
+- Database: Migration 016 written PASS. RLS on incident_qr_tokens PASS. FK indexes PASS. updated_at trigger PASS. No geometry columns (N/A). Cross-org leakage: PENDING (migration not yet applied).
+- Backend/API: Input validated with Zod PASS. {data,error,meta} shape PASS. HTTP status codes PASS. Raw DB errors not exposed PASS. Auth on protected routes PASS. incident_log written on QR check-in PASS. No PII in logs PASS. Public check-in route intentionally unauthenticated (by design).
+- Frontend: Loading states PASS (useTransition + disabled buttons). Empty state PASS (QrPanel empty state). Error state PASS (error.tsx boundaries, inline form errors). Error boundaries PASS. Form labels PASS (all inputs have htmlFor labels). Touch targets PASS (h-11/h-12 on mobile check-in buttons, h-8 on command-center buttons — acceptable for desktop IC use). No any types PASS. TypeScript strict: ZERO ERRORS.
+- Real-Time & Offline: Realtime N/A for QR panel (token list doesn't need live updates). Volunteer check-in triggers Realtime INSERT on incident_personnel which the PersonnelBoard already subscribes to. Optimistic UI: N/A (QR panel mutations are low-frequency). Offline: N/A (command-center feature).
+- Notifications: N/A — no notifications for volunteer check-in at this stage.
+- Testing: 30/30 unit tests pass. No new unit tests (deferred, consistent with Session 4). Playwright e2e: PENDING carry-forward.
+- Security: No secrets in code PASS. service_role not in client PASS. Public check-in uses service role server-side only PASS. Input validated PASS. No SQL interpolation PASS. lookup_qr_token exposes only minimal fields PASS. npm audit: known issue (next-pwa, carry-forward).
+- Accessibility: Labels on all check-in form fields PASS. Radix/shadcn components ARIA-compliant PASS. Axe automated check: PENDING.
+- Code Quality: Zero TS errors PASS. No dead code PASS. Naming conventions PASS. Business logic in /features/incidents/logic PASS. No file >400 lines PASS.
+
+---
+
+## Session 6 — 2026-03-30
+
+### What Was Built
+Completed Feature 2 (Real-Time Resource & Team Tracking). Three phases: (1) Personnel board improvements — member search dropdown replaces UUID prototype input, inline role assignment, and check-out button per row. (2) PAR roll calls — migration 017, API routes, and real-time PAR panel with optimistic mark-safe. (3) Equipment tracking — deploy/return resource logic, API routes, and ResourceBoard with optimistic deploy/return UI.
+
+### Feature Reference
+Feature: Feature 2 — Real-Time Resource & Team Tracking
+Status: Complete (except explicitly deferred items: drag-and-drop quick-assign, overdue team alerts, missing member alerts)
+
+### Files Created or Modified
+- `supabase/migrations/017_incident_par.sql` — incident_par_events + incident_par_responses tables, RLS, updated_at triggers
+- `src/features/incidents/schemas.ts` — renamed UpdatePersonnelStatusSchema → UpdatePersonnelSchema (added incidentRole + checkout fields); added InitiateParSchema, SubmitParResponseSchema, DeployResourceSchema, ReturnResourceSchema
+- `src/features/incidents/logic/update-personnel-status.ts` — extended to handle role assignment and checkout in addition to status changes
+- `src/features/incidents/logic/initiate-par.ts` — new: creates PAR event, counts active personnel, writes incident_log
+- `src/features/incidents/logic/submit-par-response.ts` — new: upserts par_response, recalculates confirmed_count, closes PAR when complete
+- `src/features/incidents/logic/deploy-resource.ts` — new: deploys resource to incident, updates resource status, writes incident_log
+- `src/features/incidents/logic/return-resource.ts` — new: returns resource, resets resource status, writes incident_log
+- `src/app/api/incidents/[id]/personnel/[personnelId]/route.ts` — updated to use UpdatePersonnelSchema (handles status + role + checkout)
+- `src/app/api/incidents/[id]/par/route.ts` — new: GET latest PAR event + responses, POST initiate PAR
+- `src/app/api/incidents/[id]/par/[parId]/responses/route.ts` — new: POST submit PAR response
+- `src/app/api/incidents/[id]/resources/route.ts` — new: GET deployed resources, POST deploy
+- `src/app/api/incidents/[id]/resources/[incidentResourceId]/route.ts` — new: PATCH return resource
+- `src/features/incidents/components/personnel-board.tsx` — member search dropdown, inline RoleSelect, CheckOutButton per row
+- `src/features/incidents/components/par-panel.tsx` — new: PAR roll call UI with Realtime updates
+- `src/features/incidents/components/resource-board.tsx` — new: deploy/return resource UI with optimistic updates
+- `src/app/incidents/[id]/page.tsx` — added SSR fetches for org members, PAR event/responses, deployed+available resources; added ParPanel and ResourceBoard to JSX
+- `src/lib/supabase/database.types.ts` — added incident_par_events and incident_par_responses stubs
+- `database_schema.md` — corrected PAR table definitions (added updated_at, organization_id on responses, unique constraint, additional indexes)
+
+### Database Changes
+- Migration 017: `incident_par_events` — PAR roll call events (ACTION REQUIRED: apply in Supabase SQL Editor)
+- Migration 017: `incident_par_responses` — per-person PAR responses with UNIQUE constraint (par_event_id, personnel_id)
+
+### Decisions Made
+- Decision: RoleSelect is disabled for volunteer personnel (shows "Unaffiliated" text instead).
+  Reason: Volunteers are not org members and don't hold ICS roles; the incident_role column is reserved for org-member personnel.
+
+- Decision: CheckOut optimistic removal does not roll back on failure.
+  Reason: A check-out failure is very rare; rolling back by re-adding the row is confusing UX. The Realtime UPDATE will correct state on the next event. Consistent with the "fail loudly in logs, silently in UI" rule.
+
+- Decision: PAR confirmed_count recalculated from response table count rather than increment.
+  Reason: Upserts (re-submissions) could double-count with a naive increment. Recounting from the response table is correct and idempotent.
+
+- Decision: ResourceBoard uses optimistic UI with full rollback for both deploy and return.
+  Reason: Resource deployment is a high-value action; rollback on failure is important for accuracy.
+
+### Deviations From Plan
+- None — all work matches the approved plan.
+
+### Known Issues / Open Items
+- **PENDING — ACTION REQUIRED**: Migration 017 must be applied to Supabase SQL Editor before testing PAR.
+- **PENDING**: database.types.ts is still a hand-authored stub. Regenerate after all migrations applied.
+- **DEFERRED**: No unit tests for new logic files (initiate-par, submit-par-response, deploy-resource, return-resource). Add before Feature 6 or first staging deploy.
+- **DEFERRED**: Drag-and-drop quick-assign (UX enhancement).
+- **DEFERRED**: Overdue team alerts / missing member alerts (requires notification infrastructure — Feature 7).
+- **DEFERRED**: IC-only enforcement for PAR initiation and token creation (deferred to RBAC build-out).
+- **DEFERRED**: QR code Download/Print button (carry-forward from Session 5).
+- **HIGH — CARRY FORWARD**: Email confirmation DISABLED in Supabase.
+- **HIGH — CARRY FORWARD**: `src/app/api/dev/signin/route.ts` must be deleted before production.
+- **HIGH — CARRY FORWARD**: 5 high-severity vulnerabilities in next-pwa@5.6.0.
+
+### Environment Variables Added
+- None.
+
+### What To Do Next Session
+Next: Apply migration 017 in Supabase SQL Editor. Manually test: (1) check-in a member using the new dropdown; (2) assign a role inline; (3) check out a member; (4) initiate PAR → mark each member safe → PAR completes; (5) deploy a resource → return it. After verification, ask the user: Feature 3 (Incident Lifecycle — subject info, command structure, suspension/closure), Feature 4 (Search Mapping — Mapbox sectors), or Feature 5 (ICS Form Auto-Fill + PDF Export).
+
+### Definition of Done Status
+- Database: Migration 017 written PASS. RLS on par tables PASS. FK indexes PASS. updated_at triggers PASS. Unique constraint on par_responses PASS. Cross-org leakage: PENDING (migration not yet applied).
+- Backend/API: Input validated with Zod PASS. {data,error,meta} shape PASS. HTTP status codes PASS. Raw DB errors not exposed PASS. Auth on all routes PASS. incident_log written on all mutations PASS. No PII in logs PASS.
+- Frontend: Loading states PASS (useTransition). Empty states PASS (all three boards). Error states PASS (inline error messages). Error boundaries PASS (existing). Form labels PASS (sr-only labels on selects). Touch targets: LOW (board buttons h-7/h-8, acceptable for desktop command-center use). No any types PASS. TypeScript strict: ZERO ERRORS.
+- Real-Time: PAR panel subscribes to par_events INSERT/UPDATE and par_responses INSERT PASS. Reconnection logic PASS. Personnel board Realtime unchanged PASS. ResourceBoard: no Realtime (low-frequency, not required for MVP).
+- Notifications: N/A — no new notifications triggered.
+- Testing: 30/30 unit tests pass (unchanged). No new unit tests (deferred, consistent with previous sessions). Playwright e2e: PENDING carry-forward.
+- Security: No secrets in code PASS. service_role not in client PASS. Input validated PASS. No SQL interpolation PASS. npm audit: known issue (next-pwa, carry-forward).
+- Accessibility: sr-only labels on all new selects PASS. Radix/shadcn ARIA components unchanged PASS. Axe: PENDING.
+- Code Quality: Zero TS errors PASS. No dead code PASS. Naming conventions PASS. Business logic in /features/incidents/logic PASS. No file >400 lines PASS.
 
 ---
