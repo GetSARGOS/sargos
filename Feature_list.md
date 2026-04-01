@@ -88,6 +88,28 @@ The foundation everything else is built on. Must be solid before anything else s
 
 ### 3. Incident Lifecycle Management [FULL]
 
+#### Pre-Requisite: Incident Board Tabbed Navigation
+
+Before building Feature 3 content, convert the incident board (`/incidents/[id]`) from a vertically stacked layout to a tabbed layout. As the incident board grows across Features 2–5, a single scrolling page becomes unusable for ICs — especially in field conditions. This is a layout-only change: no new data, no new API routes.
+
+**Tab structure (designed to accommodate all MVP features):**
+- **Overview** — incident summary, command structure assignment, subject information, and incident status controls (suspend, close, hand-off). This is the primary landing tab and receives all Feature 3 content.
+- **Personnel** — personnel status board, inline role assignment, check-out, and PAR roll call panel. Consolidates what is currently stacked on the page.
+- **Resources** — resource/equipment board and QR check-in panel. Consolidates what is currently stacked on the page.
+- **Map** — Mapbox search map, sector drawing and assignment, waypoints, and track overlays. Receives all Feature 4 (Search Mapping) content.
+- **Forms** — ICS form review-and-export UI. Receives all Feature 5 (ICS Form Auto-Fill) content.
+- **Log** — chronological, timestamped incident log with IC narrative entry form. Receives the incident log viewer built in this feature.
+
+**Implementation notes:**
+- Use the shadcn `Tabs` component (`npx shadcn@latest add tabs`) — it is Radix-based and keyboard navigable.
+- Active tab persists in the URL query string (`?tab=personnel`) so the IC's view survives a page refresh and can be deep-linked from notifications.
+- Each tab renders its panel only when active (lazy mount) to avoid unnecessary Supabase Realtime subscriptions on inactive tabs.
+- The Personnel and Resources tabs keep their existing Realtime subscriptions active even when not focused — accountability board must stay current in the background.
+
+---
+
+#### Feature 3 Content
+
 - Create new incident with: name, type, location (lat/lng + address), date/time, initial description
 - Incident types: Lost Person, Overdue Hiker, Technical Rescue, Flood/Swift Water, Avalanche, Structure Collapse, Mutual Aid, Training
 - Incident status: Planning, Active, Suspended, Closed
@@ -199,6 +221,29 @@ Must ship at MVP — this is a SaaS, not a free tool.
 - Org Admin is the billing owner
 - Graceful feature degradation on subscription lapse — data is never deleted, features are gated
 - Enterprise customers are managed outside Stripe via direct invoicing
+
+---
+
+### 9. Organization Branding & Theme [LITE at MVP, FULL at Post-MVP]
+
+Every team has a identity. This feature lets them use it.
+
+#### MVP (ships incrementally)
+- **System / light / dark mode toggle** — available to all users immediately; respects OS preference by default; preference persists in localStorage
+- **Application font** — replace the default system font with a typeface appropriate for emergency management and first responder use. Target fonts: IBM Plex Sans (used by FEMA and federal agencies, excellent legibility under stress) or Source Sans 3 (widely used in emergency management tooling). Implemented via `next/font/google` — a one-file change with no security or compliance risk. Apply globally across the application, including PDFs (via React-PDF font registration).
+- **Default accent color: forest green** — replaces the grayscale default with a SAR-appropriate green across primary buttons, badges, and accents
+- **Org color customization** — Org Admins can set a primary hex color for their organization
+- Org color applied to: primary buttons, sidebar accent, status badge accents, and the org logo mark
+- Member-facing views (incident board, check-in page) inherit the org's color
+- Color is stored on the `organizations` table and served with the org profile
+
+#### Post-MVP [FULL upgrade]
+- Secondary/accent color picker (complementary color for backgrounds and subtle UI elements)
+- Org logo upload — replaces the letter-mark in the nav and on PDFs
+- Custom header color with auto-computed foreground color for legibility
+- Dark mode variant of org colors (auto-computed from primary, or manually overridden)
+- Theme preview before saving
+- Color reset to SARGOS default
 
 ---
 
