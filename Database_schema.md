@@ -472,20 +472,22 @@ CREATE TABLE incident_qr_tokens (
   scans           INTEGER NOT NULL DEFAULT 0,
   created_by      UUID NOT NULL REFERENCES organization_members(id),
   expires_at      TIMESTAMPTZ, -- null = expires when incident closes
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 
 **RLS Policies:**
 - `SELECT`: Org members on the incident
-- `INSERT`: IC and above
-- `UPDATE` (is_active, expires_at): IC and above
-- Public token lookup: one narrow RPC function only — `lookup_qr_token(token TEXT)` — returns only `incident_id` and `is_active`. No other data exposed publicly.
+- `INSERT`: Org members (IC-only enforcement at API layer)
+- `UPDATE` (is_active, expires_at): Org members (IC-only enforcement at API layer)
+- Public token lookup: one narrow RPC function only — `lookup_qr_token(p_token TEXT)` — returns `incident_id`, `is_active`, `incident_name`, `organization_name`. No other data exposed publicly.
 
 **Indexes:**
 ```sql
 CREATE INDEX idx_qr_tokens_token ON incident_qr_tokens(token);
 CREATE INDEX idx_qr_tokens_incident_id ON incident_qr_tokens(incident_id);
+CREATE INDEX idx_qr_tokens_organization_id ON incident_qr_tokens(organization_id);
 ```
 
 ---
@@ -728,26 +730,35 @@ CREATE TABLE incident_par_events (
   initiated_by    UUID NOT NULL REFERENCES organization_members(id),
   initiated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   completed_at    TIMESTAMPTZ,
-  total_personnel INTEGER NOT NULL,
+  total_personnel INTEGER NOT NULL DEFAULT 0,
   confirmed_count INTEGER NOT NULL DEFAULT 0,
-  unaccounted_ids UUID[] DEFAULT '{}', -- personnel IDs who did not respond
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+  unaccounted_ids UUID[] NOT NULL DEFAULT '{}', -- personnel IDs who did not respond
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE incident_par_responses (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   par_event_id    UUID NOT NULL REFERENCES incident_par_events(id) ON DELETE CASCADE,
+  incident_id     UUID NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   personnel_id    UUID NOT NULL REFERENCES incident_personnel(id) ON DELETE CASCADE,
-  confirmed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   confirmed_safe  BOOLEAN NOT NULL DEFAULT true,
-  notes           TEXT
+  confirmed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  notes           TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT incident_par_responses_unique UNIQUE (par_event_id, personnel_id)
 );
 ```
 
 **Indexes:**
 ```sql
 CREATE INDEX idx_par_events_incident_id ON incident_par_events(incident_id);
+CREATE INDEX idx_par_events_organization_id ON incident_par_events(organization_id);
 CREATE INDEX idx_par_responses_par_event_id ON incident_par_responses(par_event_id);
+CREATE INDEX idx_par_responses_incident_id ON incident_par_responses(incident_id);
+CREATE INDEX idx_par_responses_organization_id ON incident_par_responses(organization_id);
 ```
 
 ---
