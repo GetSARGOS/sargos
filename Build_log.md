@@ -633,3 +633,82 @@ Next: Apply migration 017 in Supabase SQL Editor. Manually test: (1) check-in a 
 - Code Quality: Zero TS errors PASS. No dead code PASS. Naming conventions PASS. Business logic in /features/incidents/logic PASS. No file >400 lines PASS.
 
 ---
+
+## Session 7 — 2026-04-01
+
+### What Was Built
+Pre-Feature 3 hardening sprint. No new features — this session closed accumulated security, CI, observability, and testing debt before moving forward. Deleted the dev signin route, fixed CI gate ordering, configured Sentry end-to-end, replaced the vulnerable next-pwa package, and wrote 53 new unit tests covering all 6 business logic functions deferred from Sessions 4–6.
+
+### Feature Reference
+Feature: N/A — Hardening / Tech Debt
+Status: Complete
+
+### Files Created or Modified
+- `src/app/api/dev/signin/route.ts` — DELETED. Security blocker carried since Session 1.
+- `.github/workflows/ci.yml` — Fixed: build job now requires `test` in addition to `typecheck` and `lint`. Added `NEXT_PUBLIC_SENTRY_DSN: ""` placeholder env var.
+- `next.config.ts` — Wrapped export with `withSentryConfig`. Removed `hideSourceMaps` and `disableClientWebpackPlugin` (removed in Sentry v10).
+- `.env.example` — Added `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_FORCE_ENABLED`.
+- `sentry.client.config.ts` — Created. Browser-side Sentry init with PII scrubbing and breadcrumbs.
+- `sentry.server.config.ts` — Created. Server-side Sentry init with PII scrubbing.
+- `sentry.edge.config.ts` — Created. Edge runtime Sentry init with PII scrubbing.
+- `package.json` — Replaced `next-pwa@^5.6.0` with `@ducanh2912/next-pwa@^10.2.9`.
+- `src/features/incidents/__tests__/test-helpers.ts` — Created. Shared Proxy-based Supabase mock builder for all incident logic tests.
+- `src/features/incidents/__tests__/initiate-par.test.ts` — Created. 8 tests.
+- `src/features/incidents/__tests__/submit-par-response.test.ts` — Created. 8 tests.
+- `src/features/incidents/__tests__/deploy-resource.test.ts` — Created. 9 tests.
+- `src/features/incidents/__tests__/return-resource.test.ts` — Created. 7 tests.
+- `src/features/incidents/__tests__/create-qr-token.test.ts` — Created. 7 tests.
+- `src/features/incidents/__tests__/qr-volunteer-checkin.test.ts` — Created. 9 tests.
+
+### Database Changes
+- None.
+
+### Decisions Made
+- Decision: `@ducanh2912/next-pwa` installed but NOT configured in next.config.ts.
+  Reason: PWA is Feature 9 (deferred). The package is present as the vetted replacement for the vulnerable `next-pwa`; configuration will happen when PWA support is built.
+
+- Decision: 5 remaining npm audit vulnerabilities (workbox-build → @rollup/plugin-terser → serialize-javascript chain) accepted as known/build-time-only.
+  Reason: This is an industry-wide issue affecting all PWA libraries that use workbox. The chain only runs during `npm run build`, not at runtime in the browser. No user data is exposed. Will be revisited when workbox ships a fix.
+
+- Decision: Sentry `hideSourceMaps` and `disableClientWebpackPlugin` removed (were previously added incorrectly).
+  Reason: Both options were removed in @sentry/nextjs v10. `widenClientFileUpload: true` is the correct v10 option for uploading client-side source maps.
+
+- Decision: Test helper uses a Proxy-based chain (`makeChain`) rather than per-method mocks.
+  Reason: Supabase's fluent builder has dozens of chainable methods. Mocking each individually would require 100+ `vi.fn()` calls per test. The Proxy approach makes any method call return the same awaitable proxy, handling all builder patterns (`.select().eq().is().maybeSingle()`, `.insert().select().single()`, `.update().eq()`, bare `.rpc()`, etc.) with zero boilerplate.
+
+### Deviations From Plan
+- None.
+
+### Known Issues / Open Items
+- **PENDING**: database.types.ts is still a hand-authored stub. Regenerate after all migrations applied.
+- **DEFERRED**: Drag-and-drop quick-assign.
+- **DEFERRED**: Overdue team alerts / missing member alerts.
+- **DEFERRED**: IC-only enforcement for PAR initiation and token creation.
+- **DEFERRED**: QR code Download/Print button.
+- **DEFERRED**: PWA configuration (Feature 9).
+- **HIGH — USER ACTION REQUIRED**: Set up Sentry account and add `NEXT_PUBLIC_SENTRY_DSN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` to `.env.local` and Vercel project settings.
+- **HIGH — CARRY FORWARD**: Email confirmation DISABLED in Supabase. User acknowledged; will upgrade plan and re-enable with Resend before release.
+- **MEDIUM — CARRY FORWARD**: 5 build-time-only npm audit vulnerabilities in workbox chain. Accepted for now.
+- **MEDIUM — CARRY FORWARD**: No Playwright e2e tests. Must configure before first staging deploy.
+- **MEDIUM — CARRY FORWARD**: Axe accessibility checks never run. Must run before each feature is marked complete.
+- **LOW — CARRY FORWARD**: Button touch targets 32px (below 44px field minimum). Acceptable for command-center desktop use.
+
+### Environment Variables Added
+- `SENTRY_ORG` — Sentry organization slug (added to .env.example).
+- `SENTRY_PROJECT` — Sentry project slug (added to .env.example).
+- `SENTRY_FORCE_ENABLED` — Set to `true` to enable Sentry in non-production builds (added to .env.example).
+
+### What To Do Next Session
+Ready for Feature 3. Start with Feature 3 — Incident Lifecycle (subject information, command structure, suspension/closure). Read `feature_list.md` Feature 3 section and `database_schema.md` before writing any code. Ask the user to confirm which sub-features of Feature 3 to prioritize if the full feature is too large for one session.
+
+### Definition of Done Status
+- Database: No changes PASS.
+- Backend/API: Dev signin route deleted PASS. No new routes.
+- Frontend: No changes.
+- Testing: 83/83 unit tests pass PASS. 9 test files. All Session 4–6 logic covered. Playwright e2e: PENDING carry-forward.
+- Security: dev/signin DELETED PASS. npm audit: 5 build-time-only vulns (known/accepted). No secrets in code PASS.
+- Observability: Sentry initialized (client + server + edge) PASS. withSentryConfig wrapping PASS. PII scrubbed in beforeSend PASS. User action required: add DSN/org/project to environment.
+- CI/CD: build job now requires test job PASS. Vercel deploys gated on passing tests PASS.
+- Code Quality: Zero TS errors PASS. Zero lint errors (confirmed by CI). Naming conventions PASS.
+
+---

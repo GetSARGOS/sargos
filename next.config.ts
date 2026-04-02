@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 // NOTE: unsafe-inline and unsafe-eval are required by Next.js (hydration scripts)
 // and Mapbox GL JS (shader compilation / web workers). The strict domain allowlist
@@ -59,4 +60,27 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  // Sentry org + project are read from env vars so this file never contains secrets.
+  // Set SENTRY_ORG and SENTRY_PROJECT in your CI environment / Vercel project settings.
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+
+  // Auth token for source map upload. Set SENTRY_AUTH_TOKEN in CI / Vercel.
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+
+  // Suppress Sentry CLI output during local builds.
+  silent: true,
+
+  // Upload source maps in production builds only.
+  // This is required to get readable stack traces in Sentry.
+  widenClientFileUpload: true,
+
+  // Disable Sentry automatic instrumentation of Next.js server components —
+  // we add manual breadcrumbs for SAR-specific workflows instead.
+  autoInstrumentServerFunctions: true,
+  autoInstrumentMiddleware: false,
+
+  // Disable the Sentry tunnel route — not needed at this stage.
+  tunnelRoute: undefined,
+});
