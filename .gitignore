@@ -49,3 +49,9 @@ body.json
 signin.json
 cookies.txt
 cookies-orgb.txt
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

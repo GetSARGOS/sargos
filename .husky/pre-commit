@@ -1,1 +1,1 @@
-npm run secretlint
+npx lint-staged
