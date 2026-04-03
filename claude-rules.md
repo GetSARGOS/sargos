@@ -9,7 +9,11 @@ This is a **Search and Rescue (SAR) SaaS platform** serving volunteer and profes
 
 - Correctness and reliability always outrank speed of delivery
 - Never take shortcuts that could compromise data integrity or system availability
-- This system will pursue SOC 2, HIPAA, and FedRAMP compliance — every decision should keep that path open
+- **Compliance roadmap — current state vs target:**
+  - **Current (MVP):** SOC 2-ready architecture. No PHI collected or displayed. No HIPAA obligations at this tier.
+  - **Target (pre-Professional tier sales):** Supabase Team plan + HIPAA add-on + signed BAA. PHI fields enabled in UI. Application-level encryption for PHI columns. PHI read-access logging. Consult a HIPAA attorney before enabling.
+  - **Target (Enterprise tier):** FedRAMP authorization. AWS GovCloud migration. SAML/SSO.
+- Every architectural decision should keep the SOC 2 → HIPAA → FedRAMP path open, but MVP ships without HIPAA obligations by not collecting PHI
 
 ---
 
@@ -81,6 +85,24 @@ This stack is locked. Do not introduce technologies outside of it without explic
 - All mutations must be idempotent where possible
 - Never expose raw database errors to the client — log them server-side, return sanitized messages
 - **API versioning:** Internal API routes are unversioned. When the public API is built (Feature 20), introduce URL-based versioning (`/api/v1/`). Until then, breaking changes to internal APIs are coordinated through the mobile app release cycle.
+- **Pagination:** All list endpoints must be paginated. Two patterns are used based on data characteristics:
+  - **Cursor-based** for high-write/append-only tables: `incident_log`, `audit_log`, `notifications`. Query params: `?cursor=<opaque>&limit=25`. Response meta: `{ cursor, hasMore }`. Cursor is `created_at` + `id` of the last item, base64-encoded.
+  - **Offset-based** for stable/low-write lists: member directory, team list, incident list, resources. Query params: `?page=1&pageSize=25`. Response meta: `{ page, pageSize, totalCount, totalPages, hasMore }`.
+  - **Default page size:** 25. Incident log: 50. **Maximum page size:** 100.
+  - **Shared utility:** `/lib/pagination.ts` exports `parseCursorParams()`, `parseOffsetParams()`, `buildCursorMeta()`, and `buildOffsetMeta()`. All list API routes use these helpers.
+- **Error codes:** All API error responses include a machine-readable `code` field from a centralized registry at `/constants/error-codes.ts`.
+  - Naming convention: `DOMAIN_ACTION` in `SCREAMING_SNAKE_CASE` (e.g., `INCIDENT_NOT_FOUND`, `ORG_SLUG_TAKEN`, `AUTH_SESSION_EXPIRED`).
+  - Each entry is an object: `{ code: string, status: number }`. Multiple error codes may share an HTTP status (many-to-one).
+  - Error response shape: `{ data: null, error: { code: 'INCIDENT_NOT_FOUND', message: 'Human-readable description' }, meta: null }`.
+  - Every new API route must use error codes from the registry. If a new code is needed, add it to the registry first.
+
+### Timezone Convention
+- All timestamps in the database are `TIMESTAMPTZ` (stored as UTC). The API always returns ISO 8601 UTC strings.
+- Each incident has a `timezone` column (IANA identifier, e.g., `'America/Los_Angeles'`). All users viewing an incident see times formatted in that incident's timezone.
+- Timezone is set at incident creation (auto-detected from coordinates or manually selected) and editable by the IC.
+- Client-side formatting only — use `Intl.DateTimeFormat` with the incident's `timezone` value. Never format times server-side.
+- Project-wide display format: `DD MMM YYYY HH:mm z` (e.g., `03 Apr 2026 14:32 PST`). Defined as a constant in `/constants/date-format.ts`.
+- Non-incident-scoped timestamps (org settings, billing, audit log viewer) use the user's browser timezone.
 
 ### Database
 - Every table must have: `id` (UUID, default `gen_random_uuid()`), `created_at`, `updated_at`
@@ -156,13 +178,26 @@ This stack is locked. Do not introduce technologies outside of it without explic
 
 These rules keep the SOC 2 → HIPAA → FedRAMP path open. Do not close these doors.
 
-- **Audit log is immutable.** The audit log table must have RLS that prevents any user, including admins, from deleting or updating rows. Insert only.
+- **Audit log is immutable.** The audit log table must have RLS that prevents any user, including admins, from deleting or updating rows. Insert only. Audit log entries are retained even after user account deletion (legal basis: GDPR Art 17(3)(e) — legal obligation / defense of legal claims for life-safety accountability records).
 - **PII is isolated.** Personally identifiable information (names, contact info, subject/patient data) must be stored in clearly identified columns and tables. Do not scatter PII across the schema without awareness.
+- **PHI is not collected at MVP.** The following fields exist in the schema as nullable columns but must NOT be exposed in any UI or API response until HIPAA infrastructure is in place: `incident_subjects.medical_notes`, `incident_subjects.medications`, `incident_subjects.known_conditions`, `incident_personnel.volunteer_medical_notes`. Enabling these fields requires: Supabase Team plan + HIPAA add-on + signed BAA + application-level encryption + PHI read-access logging + legal review.
+- **PHI access mechanism (post-MVP).** When PHI fields are enabled, access uses **separate API endpoints** — not column-level filtering on existing endpoints:
+  - `GET /api/incidents/[id]/subjects` — returns non-PHI fields for all authorized personnel.
+  - `GET /api/incidents/[id]/subjects/[subjectId]/medical` — returns PHI fields for `incident_commander` and `medical_officer` only. This endpoint has its own access logging for HIPAA compliance.
+  - `GET /api/incidents/[id]/personnel/[personnelId]/medical` — returns `volunteer_medical_notes` for `incident_commander`, `safety_officer`, and `medical_officer` only.
+  - At MVP, only the non-PHI endpoints exist. The `/medical` endpoints are added when HIPAA infrastructure is in place. No existing code changes needed.
 - **Data retention hooks.** Design data deletion flows from the start — every entity must have a soft-delete (`deleted_at`) before a hard-delete path. This supports data retention policies.
+- **Account deletion strategy.** On user deletion request: pseudonymize/erase all profile data in `organization_members` and `incident_personnel` (replace display_name with "Deleted User #[hash]", clear phone, clear volunteer PII fields). `incident_log.actor_name` and `audit_log.actor_email` are retained under legal basis exception — SAR incident records are legal accountability documents. This must be documented in the privacy policy.
 - **Session management.** Auth sessions must have a defined expiry. Supabase session tokens must be refreshed automatically. Stale sessions must redirect to login.
-- **No logging of PII.** Server logs and error logs must never include user PII, credentials, or PHI. Log IDs and event types only.
-- **Encryption at rest and in transit.** Rely on Supabase's encryption at rest. Never store sensitive data in localStorage or unencrypted cookies.
-- **Dependency provenance.** Document every third-party dependency and its purpose. This is required for SOC 2 vendor management.
+  - **Access token lifetime:** 24 hours (configured in Supabase Dashboard → Auth → Settings). Extended from the 1-hour default to accommodate field command post scenarios with intermittent connectivity.
+  - **Refresh token lifetime:** 30 days. Extended from the 7-day default to prevent re-login during multi-day incidents.
+  - **On full token expiry:** Force re-login with a clear message. Unsynced offline data in the service worker queue is preserved and synced after re-auth.
+  - **PIN-based offline auth:** Deferred to Feature 10 (mobile app). Web MVP does not need it — command post laptops have intermittent connectivity, not zero connectivity.
+- **No PII in operational logs.** Server logs, error logs, and Sentry events must never include user PII, credentials, or PHI. Log IDs and event types only. **Exception:** Compliance and accountability records (`audit_log.actor_email`, `incident_log.actor_name`) retain actor identity by design — this is required for SOC 2 audit trails and legal accountability for life-safety operations. See `database-schema.md` Key Design Decisions.
+- **Encryption at rest and in transit.** Rely on Supabase's encryption at rest. Never store sensitive data in localStorage or unencrypted cookies. Post-MVP: application-level field encryption required for PHI columns before they are enabled in the UI.
+- **Dependency provenance.** A dependency provenance document (markdown table: package name, purpose, license, category, risk notes) must exist before SOC 2 audit. Direct dependencies only. Must be updated on every dependency addition after creation. Not required at MVP.
+- **Backup and disaster recovery.** Current state: Supabase Pro plan daily backups (7-day retention, RPO = 24 hours, RTO = managed by Supabase). The 24-hour RPO is a known risk during active incidents. Before SOC 2 audit: upgrade to Supabase Team plan for Point-in-Time Recovery (RPO drops to seconds). A standalone DR document must be created post-MVP.
+- **Data residency.** Supabase project must be hosted in a US region (currently US West; target: US East Virginia). Vercel serverless functions must be pinned to a US region. Both must remain US-based. GovCloud migration deferred to Enterprise tier.
 
 ---
 
@@ -437,4 +472,4 @@ Three environments exist: **local development**, **staging** (Vercel preview dep
 
 ---
 
-*Last updated: 2026-04-01 — Gap resolution session (Sections 17–21 added, Sections 4, 5, 11, 14 updated)*
+*Last updated: 2026-04-03 — Missing decisions session (Section 4 API Design expanded with pagination, error codes, timezone convention; Section 8 expanded with session expiry details and PHI access mechanism)*

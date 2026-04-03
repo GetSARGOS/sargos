@@ -5,6 +5,8 @@ import {
   qrVolunteerCheckIn,
   QrVolunteerCheckInError,
 } from '@/features/incidents/logic/qr-volunteer-checkin'
+import { checkPublicRateLimit, rateLimitExceededResponse, getClientIp } from '@/lib/rate-limit'
+import { validateOrigin, csrfRejectedResponse } from '@/lib/csrf'
 
 type RouteContext = { params: Promise<{ token: string }> }
 
@@ -58,9 +60,21 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 
 // POST /api/check-in/:token
 // Public — no auth required.
-// Submits the volunteer check-in form. Validated with Zod before processing.
+// Rate limited per IP (10/min). CSRF origin validation applied.
 export async function POST(req: NextRequest, ctx: RouteContext) {
   const { token } = await ctx.params
+
+  // CSRF: Validate Origin header on public POST endpoint
+  if (!validateOrigin(req)) {
+    return csrfRejectedResponse()
+  }
+
+  // Rate limit: 10 requests per minute per IP
+  const ip = getClientIp(req)
+  const rateLimit = await checkPublicRateLimit(ip)
+  if (!rateLimit.success) {
+    return rateLimitExceededResponse(rateLimit.reset)
+  }
 
   let body: unknown
   try {

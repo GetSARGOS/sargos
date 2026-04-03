@@ -5,6 +5,25 @@ import { withSentryConfig } from "@sentry/nextjs";
 // and Mapbox GL JS (shader compilation / web workers). The strict domain allowlist
 // on connect-src / img-src / frame-src is the meaningful restriction here.
 // TODO: Migrate to nonce-based CSP (removes unsafe-inline) before FedRAMP / SOC 2 Type II.
+
+// Parse Sentry DSN to build CSP report-uri endpoint.
+// Returns null when DSN is not set (local dev) — CSP violations won't be reported.
+function buildSentryCspReportUri(): string | null {
+  const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+  if (!dsn) return null;
+  try {
+    const url = new URL(dsn);
+    const key = url.username;
+    const projectId = url.pathname.slice(1);
+    const host = url.host;
+    return `https://${host}/api/${projectId}/security/?sentry_key=${key}`;
+  } catch {
+    return null;
+  }
+}
+
+const sentryCspUri = buildSentryCspReportUri();
+
 const ContentSecurityPolicy = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://js.stripe.com https://api.mapbox.com",
@@ -17,11 +36,16 @@ const ContentSecurityPolicy = [
     "wss://*.supabase.co",
     "https://api.mapbox.com",
     "https://events.mapbox.com",
+    "https://*.tiles.mapbox.com",
     "https://*.sentry.io",
     "https://*.ingest.sentry.io",
   ].join(" "),
   "frame-src https://js.stripe.com https://hooks.stripe.com",
   "worker-src blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  ...(sentryCspUri ? [`report-uri ${sentryCspUri}`] : []),
 ].join("; ");
 
 const nextConfig: NextConfig = {

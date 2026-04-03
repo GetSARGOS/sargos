@@ -6,6 +6,8 @@ import {
   createOrganization,
   CreateOrganizationError,
 } from '@/features/organizations/logic/create-organization'
+import { checkAuthenticatedRateLimit, rateLimitExceededResponse } from '@/lib/rate-limit'
+import { getRequestMeta } from '@/lib/request-meta'
 
 // POST /api/organizations
 // Creates a new organization and sets the authenticated user as its first org_admin.
@@ -24,6 +26,12 @@ export async function POST(request: NextRequest): Promise<Response> {
       { data: null, error: 'Unauthorized', meta: null },
       { status: 401 }
     )
+  }
+
+  // 1b. Rate limit: 60 requests per minute per user
+  const rateLimit = await checkAuthenticatedRateLimit(user.id)
+  if (!rateLimit.success) {
+    return rateLimitExceededResponse(rateLimit.reset)
   }
 
   // 2. Parse and validate request body
@@ -56,7 +64,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       serviceClient,
       parsed.data,
       user.id,
-      user.email ?? ''
+      user.email ?? '',
+      getRequestMeta(request),
     )
     return Response.json(
       { data: result, error: null, meta: null },

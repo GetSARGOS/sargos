@@ -12,6 +12,7 @@
 - All mutable tables have `updated_at TIMESTAMPTZ NOT NULL DEFAULT now()` maintained by a trigger
 - All tenant-scoped tables have `organization_id UUID NOT NULL REFERENCES organizations(id)`
 - Soft deletes use `deleted_at TIMESTAMPTZ DEFAULT NULL` — never hard delete user or incident data
+- All default queries on soft-deletable tables must include `WHERE deleted_at IS NULL`. RLS policies on these tables must also include `deleted_at IS NULL` to prevent access to soft-deleted records via direct queries. See "Exempt from Soft-Delete" section below for tables where this does not apply.
 - Geographic coordinates use PostGIS `GEOMETRY(Point, 4326)` — always EPSG:4326 (WGS84)
 - Geographic polygons use PostGIS `GEOMETRY(Polygon, 4326)`
 - All geometry columns have a GIST index
@@ -40,6 +41,7 @@ organizations
         └── team_members
   └── resources (equipment inventory)
   └── incidents
+        ├── operational_periods
         ├── incident_command_structure
         ├── incident_log
         ├── incident_subjects
@@ -85,13 +87,15 @@ CREATE TABLE organizations (
   contact_phone     TEXT,
   logo_url          TEXT,
   subscription_tier TEXT NOT NULL DEFAULT 'free' CHECK (subscription_tier IN (
-                      'free', 'volunteer', 'professional', 'enterprise'
+                      'free', 'team', 'enterprise'
                     )),
   subscription_status TEXT NOT NULL DEFAULT 'active' CHECK (subscription_status IN (
                       'active', 'past_due', 'canceled', 'trialing'
                     )),
   stripe_customer_id  TEXT UNIQUE,
-  max_members       INTEGER NOT NULL DEFAULT 5, -- enforced by tier
+  max_members       INTEGER NOT NULL DEFAULT 5, -- enforced by tier (Free = 5, Team = seat_cap, Enterprise = unlimited)
+  seat_cap          INTEGER NOT NULL DEFAULT 5, -- admin-configured spending cap; auto-scale below cap, require admin to raise above
+  -- restrict_incident_visibility BOOLEAN NOT NULL DEFAULT false, -- POST-MVP: when true, non-command members see only assigned incidents
   deleted_at        TIMESTAMPTZ DEFAULT NULL,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -296,8 +300,10 @@ CREATE TABLE incidents (
   started_at        TIMESTAMPTZ,
   suspended_at      TIMESTAMPTZ,
   closed_at         TIMESTAMPTZ,
+  timezone          TEXT NOT NULL DEFAULT 'America/Los_Angeles', -- IANA timezone identifier; all incident times displayed in this timezone
   after_action_notes TEXT,
   operational_period_hours INTEGER NOT NULL DEFAULT 12, -- default op period length
+  current_operational_period INTEGER NOT NULL DEFAULT 1, -- current active period number
   deleted_at        TIMESTAMPTZ DEFAULT NULL,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -316,6 +322,41 @@ CREATE INDEX idx_incidents_organization_id ON incidents(organization_id);
 CREATE INDEX idx_incidents_status ON incidents(organization_id, status);
 CREATE GIST INDEX idx_incidents_location_point ON incidents USING GIST(location_point);
 CREATE GIST INDEX idx_incidents_lkp_point ON incidents USING GIST(lkp_point);
+```
+
+---
+
+### `operational_periods`
+
+Tracks operational periods for an incident. Each period has defined time boundaries and objectives. IC or Planning Section Chief creates new periods manually.
+
+```sql
+CREATE TABLE operational_periods (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  incident_id     UUID NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  period_number   INTEGER NOT NULL,
+  starts_at       TIMESTAMPTZ NOT NULL,
+  ends_at         TIMESTAMPTZ, -- null = currently active period
+  objectives      TEXT,
+  weather_summary TEXT,
+  created_by      UUID REFERENCES organization_members(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (incident_id, period_number)
+);
+```
+
+**RLS Policies:**
+- `SELECT`: All incident personnel
+- `INSERT`: IC and Planning Section Chief (enforced at API layer)
+- `UPDATE`: IC and Planning Section Chief (enforced at API layer)
+- `DELETE`: Disabled
+
+**Indexes:**
+```sql
+CREATE INDEX idx_operational_periods_incident_id ON operational_periods(incident_id);
+CREATE INDEX idx_operational_periods_organization_id ON operational_periods(organization_id);
 ```
 
 ---
@@ -366,7 +407,11 @@ CREATE TABLE incident_subjects (
   last_name         TEXT NOT NULL,
   age               INTEGER,
   gender            TEXT CHECK (gender IN ('male', 'female', 'nonbinary', 'unknown')),
+  height_cm         INTEGER, -- stored metric; UI accepts imperial and converts
+  weight_kg         NUMERIC(5,1), -- stored metric; UI accepts imperial and converts
   physical_description TEXT,
+  photo_urls        TEXT[] DEFAULT '{}', -- subject photos stored in `photos` bucket at {org_id}/{incident_id}/subjects/{subject_id}-{timestamp}.ext
+  is_primary        BOOLEAN NOT NULL DEFAULT false, -- primary subject for ICS 209 auto-fill; first subject added is auto-set as primary
   last_known_point  GEOMETRY(Point, 4326),
   last_seen_at      TIMESTAMPTZ,
   clothing_description TEXT,
@@ -374,25 +419,29 @@ CREATE TABLE incident_subjects (
                       'hiker', 'hunter', 'child', 'dementia_patient',
                       'despondent', 'climber', 'skier', 'other'
                     )),
-  -- HIPAA-scoped fields: visible only to IC and medical_officer roles
-  medical_notes     TEXT,
-  medications       TEXT,
-  known_conditions  TEXT,
-  emergency_contact_name  TEXT,
-  emergency_contact_phone TEXT,
+  -- ⛔ PHI FIELDS — DISABLED AT MVP. Do not expose in any UI or API response.
+  -- Enabling requires: Supabase Team + HIPAA BAA + field-level encryption + PHI access logging.
+  -- See claude-rules.md Section 8.
+  -- When enabled: visible only to IC and medical_officer roles.
+  medical_notes     TEXT,          -- PHI
+  medications       TEXT,          -- PHI
+  known_conditions  TEXT,          -- PHI
+  emergency_contact_name  TEXT,    -- PII (not PHI, but restrict access)
+  emergency_contact_phone TEXT,    -- PII (not PHI, but restrict access)
   -- Outcome
   found_at          TIMESTAMPTZ,
   found_condition   TEXT CHECK (found_condition IN (
                       'alive_uninjured', 'alive_injured', 'deceased', 'not_found'
                     )),
   found_location    GEOMETRY(Point, 4326),
+  deleted_at        TIMESTAMPTZ DEFAULT NULL,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 
 **RLS Policies:**
-- `SELECT` (non-HIPAA fields): All incident personnel
+- `SELECT` (non-HIPAA fields): All incident personnel (where `deleted_at IS NULL`)
 - `SELECT` (HIPAA fields: medical_notes, medications, known_conditions, emergency_contact_*): IC and medical_officer roles only — enforced at API layer with column-level filtering. Do not expose these columns in default queries.
 - `INSERT/UPDATE`: IC and medical_officer roles only
 
@@ -421,14 +470,20 @@ CREATE TABLE incident_personnel (
   volunteer_phone   TEXT,
   volunteer_certifications TEXT[] DEFAULT '{}',
   volunteer_vehicle TEXT,
+  -- ⚠️ SENSITIVE PII — DISABLED AT MVP (same timeline as PHI fields).
+  -- Not PHI (self-reported, not patient data), but requires role-restricted access.
+  -- When enabled: visible to IC, safety_officer, and medical_officer only.
+  -- Requires API-layer column filtering (same mechanism as subject PHI, different role list).
+  -- Does NOT require HIPAA infrastructure (BAA, field-level encryption, PHI access logging).
   volunteer_medical_notes TEXT,
   -- Common fields
+  safety_briefing_acknowledged BOOLEAN NOT NULL DEFAULT false, -- proof volunteer was briefed (legal accountability)
   personnel_type    TEXT NOT NULL CHECK (personnel_type IN ('member', 'volunteer')),
   checkin_method    TEXT NOT NULL CHECK (checkin_method IN ('manual', 'qr_scan', 'app')),
   checked_in_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   checked_out_at    TIMESTAMPTZ DEFAULT NULL,
   status            TEXT NOT NULL DEFAULT 'available' CHECK (status IN (
-                      'available', 'assigned', 'in_field', 'resting', 'injured', 'stood_down'
+                      'available', 'assigned', 'in_field', 'resting', 'injured', 'stood_down', 'missing'
                     )),
   -- Incident-level role (overrides org role for this incident)
   incident_role     TEXT CHECK (incident_role IN (
@@ -441,6 +496,7 @@ CREATE TABLE incident_personnel (
   -- Assignment
   assigned_sector_id UUID REFERENCES incident_sectors(id) ON DELETE SET NULL,
   assigned_team_id   UUID REFERENCES teams(id) ON DELETE SET NULL,
+  expected_return_at TIMESTAMPTZ, -- IC sets during sector assignment; client polls every 60s for overdue alerts
   last_checked_in_at TIMESTAMPTZ, -- last PAR confirmation
   notes              TEXT,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -521,7 +577,7 @@ CREATE TABLE incident_log (
                   )),
   message         TEXT NOT NULL,
   actor_id        UUID REFERENCES organization_members(id) ON DELETE SET NULL,
-  actor_name      TEXT, -- denormalized in case actor is deleted later
+  actor_name      TEXT, -- denormalized for compliance accountability (retained after user deletion per GDPR Art 17(3)(e))
   metadata        JSONB DEFAULT '{}', -- structured data for the entry type
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
   -- No updated_at — this table is append-only
@@ -567,6 +623,7 @@ CREATE TABLE incident_sectors (
   terrain_type    TEXT,
   notes           TEXT,
   completed_at    TIMESTAMPTZ,
+  deleted_at      TIMESTAMPTZ DEFAULT NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -599,6 +656,7 @@ CREATE TABLE incident_waypoints (
   notes           TEXT,
   photo_urls      TEXT[] DEFAULT '{}',
   created_by      UUID REFERENCES organization_members(id) ON DELETE SET NULL,
+  deleted_at      TIMESTAMPTZ DEFAULT NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -631,6 +689,7 @@ CREATE TABLE incident_tracks (
   source_filename TEXT, -- original GPX file name if imported
   notes           TEXT,
   created_by      UUID REFERENCES organization_members(id) ON DELETE SET NULL,
+  deleted_at      TIMESTAMPTZ DEFAULT NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -671,6 +730,7 @@ CREATE TABLE incident_flight_paths (
   raw_data        JSONB DEFAULT '{}', -- original telemetry data preserved
   notes           TEXT,
   created_by      UUID REFERENCES organization_members(id) ON DELETE SET NULL,
+  deleted_at      TIMESTAMPTZ DEFAULT NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -704,6 +764,7 @@ CREATE TABLE incident_resources (
   checked_in_at   TIMESTAMPTZ,
   checked_in_by   UUID REFERENCES organization_members(id) ON DELETE SET NULL,
   notes           TEXT,
+  deleted_at      TIMESTAMPTZ DEFAULT NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -783,19 +844,24 @@ CREATE TABLE ics_forms (
   created_by      UUID REFERENCES organization_members(id) ON DELETE SET NULL,
   last_exported_at TIMESTAMPTZ,
   pdf_url         TEXT, -- Supabase Storage URL of most recent export
+  deleted_at      TIMESTAMPTZ DEFAULT NULL,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (incident_id, form_type, operational_period)
 );
 
+-- Append-only: versions are immutable snapshots. No updated_at, no deleted_at.
+-- See "Exempt from Soft-Delete" section.
 CREATE TABLE ics_form_versions (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   form_id         UUID NOT NULL REFERENCES ics_forms(id) ON DELETE CASCADE,
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   version_number  INTEGER NOT NULL,
   form_data       JSONB NOT NULL,
   pdf_url         TEXT,
   exported_by     UUID REFERENCES organization_members(id) ON DELETE SET NULL,
-  exported_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+  exported_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 
@@ -804,6 +870,7 @@ CREATE TABLE ics_form_versions (
 CREATE INDEX idx_ics_forms_incident_id ON ics_forms(incident_id);
 CREATE INDEX idx_ics_forms_organization_id ON ics_forms(organization_id);
 CREATE INDEX idx_ics_form_versions_form_id ON ics_form_versions(form_id);
+CREATE INDEX idx_ics_form_versions_organization_id ON ics_form_versions(organization_id);
 ```
 
 ---
@@ -918,7 +985,9 @@ CREATE TABLE notifications (
   delivery_status TEXT DEFAULT 'pending' CHECK (delivery_status IN (
                     'pending', 'sent', 'delivered', 'failed'
                   )),
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+  deleted_at      TIMESTAMPTZ DEFAULT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
 
@@ -940,7 +1009,7 @@ CREATE TABLE audit_log (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
   actor_id        UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  actor_email     TEXT, -- denormalized in case user is deleted
+  actor_email     TEXT, -- denormalized for compliance accountability (retained after user deletion per GDPR Art 17(3)(e))
   action          TEXT NOT NULL, -- e.g. 'incident.created', 'member.role_changed', 'form.exported'
   resource_type   TEXT NOT NULL, -- e.g. 'incident', 'organization_member', 'ics_form'
   resource_id     UUID,
@@ -978,7 +1047,7 @@ CREATE TABLE subscriptions (
   stripe_subscription_id TEXT UNIQUE,
   stripe_price_id       TEXT,
   tier                  TEXT NOT NULL CHECK (tier IN (
-                          'free', 'volunteer', 'professional', 'enterprise'
+                          'free', 'team', 'enterprise'
                         )),
   status                TEXT NOT NULL CHECK (status IN (
                           'trialing', 'active', 'past_due', 'canceled', 'unpaid'
@@ -1000,6 +1069,40 @@ CREATE INDEX idx_subscriptions_stripe_id ON subscriptions(stripe_subscription_id
 
 ---
 
+## Exempt from Soft-Delete
+
+The following tables are append-only or immutable records. They do **not** have `deleted_at` by design. Do not add soft-delete to these tables.
+
+| Table | Reason |
+|---|---|
+| `incident_log` | Append-only incident record. No `updated_at`. Insert-only RLS. |
+| `audit_log` | Append-only compliance record. Insert-only RLS. Required for SOC 2. |
+| `incident_par_events` | Immutable accountability record. A PAR roll call happened or it didn't. |
+| `incident_par_responses` | Immutable accountability record. Proof of individual safety confirmation. |
+| `ics_form_versions` | Immutable version snapshots. Deleting a version of an official form is a compliance risk. |
+| `organization_invites` | Short-lived tokens with `expires_at`. Expired invites are naturally inert. |
+| `team_members` | Junction table. Removal is a hard delete (no historical significance). |
+
+---
+
+## Storage Buckets
+
+> Full storage rules (size limits, access control, content-type validation, retention, orphan cleanup) are in `claude-rules.md` Section 21. This section maps database columns to their storage locations.
+
+| Column | Bucket | Path Pattern |
+|---|---|---|
+| `ics_forms.pdf_url` | `ics-forms` | `{org_id}/{incident_id}/{filename}` |
+| `ics_form_versions.pdf_url` | `ics-forms` | `{org_id}/{incident_id}/{filename}` |
+| `organizations.logo_url` | `org-assets` | `{org_id}/{filename}` |
+| `incident_subjects.photo_urls` | `photos` | `{org_id}/{incident_id}/subjects/{subject_id}-{timestamp}.ext` |
+| `incident_waypoints.photo_urls` | `photos` | `{org_id}/{incident_id}/{filename}` |
+| *(Feature 4)* KML/KMZ/GPX imports | `imports` | `{org_id}/{incident_id}/{filename}` |
+| *(Feature 4)* drone flight logs | `flight-logs` | `{org_id}/{incident_id}/{filename}` |
+
+All buckets are **private by default**. Access via signed URLs (1-hour expiry). Filenames must be sanitized and UUID/timestamp-prefixed to prevent collisions.
+
+---
+
 ## Triggers
 
 Apply this trigger to all tables with `updated_at`:
@@ -1018,7 +1121,7 @@ CREATE TRIGGER set_updated_at
 BEFORE UPDATE ON organizations
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 -- Repeat for: organization_members, teams, team_members, resources, incidents,
--- incident_command_structure, incident_subjects, incident_personnel,
+-- operational_periods, incident_command_structure, incident_subjects, incident_personnel,
 -- incident_sectors, incident_waypoints, incident_tracks, incident_flight_paths,
 -- incident_resources, ics_forms, k9_units, k9_deployments,
 -- notifications, subscriptions
@@ -1061,24 +1164,25 @@ When building migrations, always follow this dependency order:
 5. `organization_invites`
 6. `resources`
 7. `incidents`
-8. `incident_command_structure`
-9. `incident_subjects`
-10. `incident_sectors`
-11. `incident_personnel`
-12. `incident_qr_tokens`
-13. `incident_log`
-14. `incident_waypoints`
-15. `incident_tracks`
-16. `incident_flight_paths`
-17. `incident_resources`
-18. `incident_par_events` + `incident_par_responses`
-19. `ics_forms` + `ics_form_versions`
-20. `k9_units`
-21. `k9_deployments`
-22. `notifications`
-23. `audit_log`
-24. `subscriptions`
-25. Triggers (applied last, after all tables exist)
+8. `operational_periods`
+9. `incident_command_structure`
+10. `incident_subjects`
+11. `incident_sectors`
+12. `incident_personnel`
+13. `incident_qr_tokens`
+14. `incident_log`
+15. `incident_waypoints`
+16. `incident_tracks`
+17. `incident_flight_paths`
+18. `incident_resources`
+19. `incident_par_events` + `incident_par_responses`
+20. `ics_forms` + `ics_form_versions`
+21. `k9_units`
+22. `k9_deployments`
+23. `notifications`
+24. `audit_log`
+25. `subscriptions`
+26. Triggers (applied last, after all tables exist)
 
 ---
 
@@ -1088,7 +1192,7 @@ When building migrations, always follow this dependency order:
 Because unaffiliated walk-up volunteers captured via QR code are not org members. A single table handles both types cleanly, and it means ICS 211 (check-in list) has one authoritative source regardless of whether the person is an org member or a stranger who showed up with a flashlight.
 
 **Why denormalize `actor_name` in `incident_log` and `actor_email` in `audit_log`?**
-Users can be deactivated or deleted. The log must remain accurate even years later. Denormalizing the name and email at write time ensures historical records are always readable.
+Users can be deactivated or deleted. The log must remain accurate even years later. Denormalizing the name and email at write time ensures historical records are always readable. These fields contain PII but are **exempt** from the "no PII in logs" rule — that rule applies to operational logs (Sentry, console, server output), not compliance/accountability records. SOC 2 auditors expect audit logs to identify actors. Retention after user deletion is covered by GDPR Art 17(3)(e) (legal accountability for life-safety operations). See `claude-rules.md` Section 8.
 
 **Why JSONB for `form_data` in `ics_forms`?**
 ICS forms have different field sets per form type. JSONB allows each form type to store its own structure without requiring a separate table per form. The form schema is validated at the API layer before storage.

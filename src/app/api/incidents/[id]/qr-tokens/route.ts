@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createQrToken, CreateQrTokenError } from '@/features/incidents/logic/create-qr-token'
+import { checkAuthenticatedRateLimit, rateLimitExceededResponse } from '@/lib/rate-limit'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -69,6 +70,12 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
       { data: null, error: { code: 'UNAUTHORIZED', message: 'No active organization membership' }, meta: {} },
       { status: 401 },
     )
+  }
+
+  // Rate limit: 60 requests per minute per user
+  const rateLimit = await checkAuthenticatedRateLimit(user.id)
+  if (!rateLimit.success) {
+    return rateLimitExceededResponse(rateLimit.reset)
   }
 
   try {

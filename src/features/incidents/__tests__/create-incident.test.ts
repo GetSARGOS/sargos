@@ -23,7 +23,7 @@ function setup(mock: ReturnType<typeof buildMockSupabase>) {
 
 const validInput: CreateIncidentInput = {
   name: 'Lost hiker — Mt. Hood',
-  incidentType: 'search',
+  incidentType: 'lost_person',
 }
 
 describe('createIncident', () => {
@@ -130,7 +130,8 @@ describe('createIncident', () => {
       (c: string[]) => c[0] === 'audit_log',
     )
     expect(logCalls.length).toBe(1)
-    expect(auditCalls.length).toBe(1)
+    // 2 audit entries: incident.created + incident.role_assigned (IC assignment)
+    expect(auditCalls.length).toBe(2)
   })
 
   it('passes optional locationAddress and startedAt', async () => {

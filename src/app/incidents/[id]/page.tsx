@@ -97,7 +97,7 @@ export default async function IncidentPage({ params }: PageProps) {
       .select('id, display_name, phone, certifications')
       .in('id', memberIds)
     for (const m of members ?? []) {
-      memberMap.set(m.id, { display_name: m.display_name, phone: m.phone, certifications: m.certifications })
+      memberMap.set(m.id, { display_name: m.display_name, phone: m.phone, certifications: m.certifications ?? [] })
     }
   }
 

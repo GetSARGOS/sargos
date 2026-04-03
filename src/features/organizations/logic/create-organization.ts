@@ -11,6 +11,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/database.types'
 import type { CreateOrganizationInput } from '@/features/organizations/schemas'
+import type { RequestMeta } from '@/lib/request-meta'
 
 type ServiceClient = SupabaseClient<Database>
 
@@ -36,7 +37,8 @@ export async function createOrganization(
   serviceClient: ServiceClient,
   input: CreateOrganizationInput,
   userId: string,
-  userEmail: string
+  userEmail: string,
+  requestMeta?: RequestMeta,
 ): Promise<CreateOrganizationResult> {
   // Step 1: Insert the organization
   const { data: org, error: orgError } = await serviceClient
@@ -89,6 +91,8 @@ export async function createOrganization(
     action: 'organization.created',
     resource_type: 'organization',
     resource_id: org.id,
+    ip_address: requestMeta?.ipAddress ?? null,
+    user_agent: requestMeta?.userAgent ?? null,
     metadata: { subscription_tier: 'free' },
   })
 

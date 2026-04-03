@@ -57,12 +57,13 @@ describe('updatePersonnelStatus', () => {
         ok(null),
       ],
       incident_log: ok(null),
+      audit_log: ok(null),
     })
     setup(mock)
 
     const result = await updatePersonnelStatus(
       ORG_ID, ACTOR_MEMBER_ID, ACTOR_NAME, PERSONNEL_ID,
-      { incidentRole: 'operations_chief' },
+      { incidentRole: 'operations_section_chief' },
     )
 
     expect(result.updated).toBe(true)
@@ -197,7 +198,7 @@ describe('updatePersonnelStatus', () => {
 
     await updatePersonnelStatus(
       ORG_ID, ACTOR_MEMBER_ID, ACTOR_NAME, PERSONNEL_ID,
-      { status: 'rest' },
+      { status: 'resting' },
     )
 
     const logCalls = mock.from.mock.calls.filter(

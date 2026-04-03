@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import type { UpdatePersonnelInput } from '@/features/incidents/schemas'
+import type { RequestMeta } from '@/lib/request-meta'
 
 // ─── Error Types ──────────────────────────────────────────────────────────────
 
@@ -25,6 +26,8 @@ export async function updatePersonnelStatus(
   actorDisplayName: string,
   personnelId: string,
   input: UpdatePersonnelInput,
+  actorUserId?: string,
+  requestMeta?: RequestMeta,
 ): Promise<{ updated: boolean }> {
   const supabase = createServiceClient()
 
@@ -129,6 +132,23 @@ export async function updatePersonnelStatus(
         personnel_id: personnelId,
         previous_role: personnel.incident_role,
         new_role: input.incidentRole,
+      },
+    })
+
+    // Audit log for role changes (SOC 2 — sensitive action)
+    await supabase.from('audit_log').insert({
+      organization_id: organizationId,
+      actor_id: actorUserId ?? actorMemberId,
+      action: 'incident.role_assigned',
+      resource_type: 'incident_personnel',
+      resource_id: personnelId,
+      ip_address: requestMeta?.ipAddress ?? null,
+      user_agent: requestMeta?.userAgent ?? null,
+      metadata: {
+        incident_id: personnel.incident_id,
+        role: input.incidentRole,
+        previous_role: personnel.incident_role ?? null,
+        personnel_id: personnelId,
       },
     })
   } else if (input.status !== undefined) {

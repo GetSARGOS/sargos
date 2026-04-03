@@ -24,9 +24,9 @@ export interface PersonnelWithMember {
   member_id: string | null
   volunteer_name: string | null
   volunteer_phone: string | null
-  volunteer_certifications: string[]
-  personnel_type: 'member' | 'volunteer'
-  checkin_method: 'manual' | 'qr_scan' | 'app'
+  volunteer_certifications: string[] | null
+  personnel_type: string
+  checkin_method: string
   checked_in_at: string
   checked_out_at: string | null
   status: PersonnelStatus
@@ -378,7 +378,7 @@ export function PersonnelBoard({ incidentId, orgId: _orgId, initialPersonnel, in
                 if (memberRow) {
                   memberName = memberRow.display_name
                   memberPhone = memberRow.phone
-                  memberCertifications = memberRow.certifications
+                  memberCertifications = memberRow.certifications ?? []
                 }
               }
 

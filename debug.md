@@ -1734,13 +1734,537 @@ Developer experience tooling: Playwright, Vitest coverage, commitlint, lint-stag
 2. **Expected**: Coverage report appears in terminal. `coverage/` directory created with lcov report.
 
 ### Checklist
-- [ ] Test 1 — unit tests pass
-- [ ] Test 2 — TypeScript strict mode clean
-- [ ] Test 3 — commitlint blocks bad messages
-- [ ] Test 4 — lint-staged runs pre-commit
-- [ ] Test 5 — Playwright runs (with dev server)
-- [ ] Test 6 — coverage report generated
+- [ Pass ] Test 1 — unit tests pass
+- [ Pass ] Test 2 — TypeScript strict mode clean
+- [ Pass ] Test 3 — commitlint blocks bad messages
+- [ Skipped ] Test 4 — lint-staged runs pre-commit
+- [ Pass ] Test 5 — Playwright runs (with dev server)
+- [ Pass ] Test 6 — coverage report generated
 
-Tested by: __________ Date: __________
+Tested by: __Tyler Alex__ Date: __4/2/26__
+
+---
+
+## Session 14 — Security Hardening (Rate Limiting, CSRF, CSP)
+
+### What Was Built
+Added rate limiting (Upstash Redis) to all 6 POST endpoints, CSRF origin validation on the public check-in endpoint, and hardened the CSP with missing directives and Sentry violation reporting.
+
+### Pre-Test Checklist
+Before running tests, confirm:
+- [ ] Dev server started: `npm run dev`
+- [ ] Supabase local or cloud instance connected
+- [ ] (Optional) `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` set in `.env.local` — rate limiting is disabled without these
+- [ ] `NEXT_PUBLIC_APP_URL` set in `.env.local` (e.g., `http://localhost:3000`)
+
+---
+
+### TEST 1: Rate Limiting — Check-In Endpoint (Public, 10/min per IP)
+
+**Purpose:** Verify the public check-in endpoint returns 429 after 10 requests in 60 seconds.
+**Tool:** Terminal (curl)
+**Prerequisite:** Upstash Redis credentials set in `.env.local`. An active incident with a QR token.
+**Steps:**
+1. Get a valid QR token from the QR tokens page for an active incident
+2. Run the following loop to send 11 POST requests in quick succession:
+   ```bash
+   for i in $(seq 1 11); do
+     echo "Request $i:"
+     curl -s -o /dev/null -w "%{http_code}\n" \
+       -X POST http://localhost:3000/api/check-in/YOUR_TOKEN \
+       -H "Content-Type: application/json" \
+       -d '{"displayName":"Test Volunteer","callsign":"TV-'$i'","role":"field_member"}'
+   done
+   ```
+3. Observe the HTTP status codes
+
+**Expected Result:** Requests 1–10 return 201 or 400/409 (normal responses). Request 11 returns `429`. The 429 response body contains `{ error: { code: "RATE_LIMIT_EXCEEDED" } }` and a `Retry-After` header.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 2: Rate Limiting Graceful Degradation (No Upstash)
+
+**Purpose:** Verify the app does not crash when Upstash credentials are missing.
+**Tool:** Terminal
+**Steps:**
+1. Remove or comment out `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` from `.env.local`
+2. Restart dev server: `npm run dev`
+3. Check terminal output — should see warning: `[rate-limit] UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN not set — rate limiting disabled`
+4. Make a POST request to any endpoint — it should work normally without 429
+
+**Expected Result:** App starts without errors. Warning logged. All requests pass through without rate limiting.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 3: CSRF — Reject Cross-Origin POST to Check-In
+
+**Purpose:** Verify that a POST request with a malicious Origin header is rejected.
+**Tool:** Terminal (curl)
+**Steps:**
+1. Run:
+   ```bash
+   curl -s -X POST http://localhost:3000/api/check-in/ANY_TOKEN \
+     -H "Origin: https://evil.com" \
+     -H "Content-Type: application/json" \
+     -d '{"displayName":"Attacker","callsign":"EVIL"}'
+   ```
+2. Check the response
+
+**Expected Result:** HTTP 403 with `{ error: { code: "CSRF_ORIGIN_MISMATCH", message: "Forbidden" } }`.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 4: CSRF — Allow Same-Origin POST
+
+**Purpose:** Verify that a POST from the app's own origin is allowed.
+**Tool:** Terminal (curl)
+**Steps:**
+1. Run:
+   ```bash
+   curl -s -X POST http://localhost:3000/api/check-in/ANY_TOKEN \
+     -H "Origin: http://localhost:3000" \
+     -H "Content-Type: application/json" \
+     -d '{"displayName":"Good Volunteer","callsign":"GV-1","role":"field_member"}'
+   ```
+
+**Expected Result:** Response is NOT 403 — returns normal response (201, 400, or 404 depending on token validity).
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 5: CSRF — Allow No-Origin Requests (curl without Origin header)
+
+**Purpose:** Verify that requests without an Origin header (non-browser clients) are allowed.
+**Tool:** Terminal (curl)
+**Steps:**
+1. Run:
+   ```bash
+   curl -s -X POST http://localhost:3000/api/check-in/ANY_TOKEN \
+     -H "Content-Type: application/json" \
+     -d '{"displayName":"API Client","callsign":"API-1","role":"field_member"}'
+   ```
+
+**Expected Result:** Response is NOT 403 — returns normal response.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 6: CSP Header Present
+
+**Purpose:** Verify the Content-Security-Policy header is present and includes the new directives.
+**Tool:** Browser DevTools
+**Steps:**
+1. Open http://localhost:3000 in the browser
+2. Open DevTools → Network tab
+3. Click the first document request (the HTML page)
+4. Check Response Headers
+
+**Expected Result:** `Content-Security-Policy` header is present and contains:
+- `default-src 'self'`
+- `object-src 'none'`
+- `base-uri 'self'`
+- `form-action 'self'`
+- `X-Frame-Options: DENY`
+- `X-Content-Type-Options: nosniff`
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 7: Unit Tests Pass
+
+**Purpose:** Verify all unit tests pass including the 18 new security tests.
+**Tool:** Terminal
+**Steps:**
+1. Run: `npx vitest run`
+
+**Expected Result:** 126 tests pass across 14 test files. 0 failures.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### Checklist
+- [ Pass ] Test 1 — Rate limiting returns 429 after limit exceeded
+- [ Pass ] Test 2 — Graceful degradation without Upstash
+- [ Pass ] Test 3 — CSRF rejects evil.com Origin
+- [ Pass ] Test 4 — CSRF allows same-origin
+- [ Pass ] Test 5 — CSRF allows no-Origin (curl)
+- [ Pass ] Test 6 — CSP header present in response
+- [ Pass ] Test 7 — Unit tests all pass
+
+Tested by: __Tyler Alex__ Date: __4/3/26__
+
+---
+
+## Session 15 — Reliability Fixes & Tech Debt (Retry, Audit Log, Test Fixes)
+
+### What Was Built
+1. **`withRetry` utility** (`src/lib/retry.ts`) — exponential backoff retry wrapper (3 attempts, 200→400→800ms)
+2. **`getRequestMeta` utility** (`src/lib/request-meta.ts`) — extracts IP and User-Agent from request headers
+3. **Audit log IP/UA capture** — all `audit_log` inserts now pass `ip_address` and `user_agent`
+4. **Role assignment audit logging** — incident role changes now write to `audit_log` (not just `incident_log`)
+5. **9 pre-existing TS test errors fixed** — stale enum values and mock type access
+
+### Test 1 — withRetry returns on first success
+**Steps:**
+1. Run `npx vitest run src/lib/__tests__/retry.test.ts`
+2. Check "returns the result on first success without delay" passes
+
+**Expected:** Test passes, function called once, no console.warn
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+### Test 2 — withRetry retries and eventually succeeds
+**Steps:**
+1. Run `npx vitest run src/lib/__tests__/retry.test.ts`
+2. Check "retries on failure and returns eventual success" passes
+
+**Expected:** Test passes, function called twice
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+### Test 3 — withRetry throws after all attempts exhausted
+**Steps:**
+1. Run `npx vitest run src/lib/__tests__/retry.test.ts`
+2. Check "throws the last error after all attempts exhausted" passes
+
+**Expected:** Test passes, last error thrown, function called 3 times
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+### Test 4 — getRequestMeta extracts IP from x-forwarded-for
+**Steps:**
+1. Run `npx vitest run src/lib/__tests__/request-meta.test.ts`
+2. Check "extracts IP from x-forwarded-for (first entry)" passes
+
+**Expected:** First IP in comma-separated list returned
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+### Test 5 — Audit log includes IP/UA on incident creation
+**Steps:**
+1. Create an incident via POST `/api/incidents` (requires auth)
+2. In Supabase Dashboard → Table Editor → `audit_log`, find the `incident.created` entry
+3. Verify `ip_address` and `user_agent` columns are populated (not null)
+
+**Expected:** Both fields have values from the request headers
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+### Test 6 — Role assignment writes to audit_log
+**Steps:**
+1. On an active incident, change a personnel member's incident role via PATCH `/api/incidents/[id]/personnel/[personnelId]`
+2. In Supabase Dashboard → Table Editor → `audit_log`, find the `incident.role_assigned` entry
+3. Verify `metadata` contains `role`, `previous_role`, `incident_id`, and `personnel_id`
+4. Verify `ip_address` and `user_agent` are populated
+
+**Expected:** New audit_log row with action `incident.role_assigned` and full metadata
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+### Test 7 — IC role assignment audit on incident creation
+**Steps:**
+1. Create a new incident via POST `/api/incidents`
+2. In Supabase Dashboard → Table Editor → `audit_log`, check for TWO entries: `incident.created` and `incident.role_assigned`
+3. The `incident.role_assigned` entry should have `role: 'incident_commander'` and `previous_role: null`
+
+**Expected:** Two audit_log entries per incident creation
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+### Test 8 — Full test suite passes
+**Steps:**
+1. Run `npx vitest run`
+2. Check output
+
+**Expected:** 16 test files, 141 tests passed, 0 failures
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+### Test 9 — TypeScript compiles with zero errors
+**Steps:**
+1. Run `npx tsc --noEmit`
+2. Check output
+
+**Expected:** No output (zero errors)
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### Known Limitations
+- **`withRetry` not yet applied to routes.** The utility is built and tested but not yet wrapping any actual Supabase calls in API routes. This requires careful placement at the individual query level inside business logic functions.
+- **database.types.ts still hand-authored.** The `npm run db:types` script is ready but requires `npx supabase login` first (interactive browser auth).
+- **Realtime second-tab bug still documented but N/A.** No Realtime subscriptions exist in the codebase. Bug fix will be applied when Realtime features are built (Feature 3+).
+
+---
+
+### Checklist
+- [ Pass ] Test 1 — withRetry first success
+- [ Pass ] Test 2 — withRetry retry and succeed
+- [ Pass ] Test 3 — withRetry all attempts exhausted
+- [ Pass ] Test 4 — getRequestMeta IP extraction
+- [ Pass ] Test 5 — Audit log IP/UA on incident creation
+- [ Pass ] Test 6 — Role assignment writes to audit_log
+- [ Pass ] Test 7 — IC role audit on incident creation
+- [ Pass ] Test 8 — Full test suite passes (141/141)
+- [ Pass ] Test 9 — TypeScript zero errors
+
+Tested by: __Tyler Alex__ Date: __4/3/26__
+
+---
+
+## Session 16 — Pre-Feature-3 Infrastructure
+
+### What Was Built
+Shared utilities for all future API routes: error code registry, pagination utilities (offset + cursor), date formatting, and a database seed script for local dev.
+
+### Automated Test Results
+All 172 tests pass. `npx tsc --noEmit` reports zero errors.
+
+### How To Run The Automated Tests Yourself
+
+Open a terminal in the project root (`sargos` folder) and run:
+
+```
+npm test
+```
+
+You should see output like:
+```
+ Test Files  18 passed (18)
+      Tests  172 passed (172)
+```
+
+If any test says "FAIL", stop and report it before continuing.
+
+To run just the new tests from this session:
+
+```
+npx vitest run src/lib/__tests__/pagination.test.ts
+npx vitest run src/constants/__tests__/date-format.test.ts
+```
+
+To run the TypeScript type check:
+
+```
+npx tsc --noEmit
+```
+
+This should produce **no output at all** — that means zero errors. If it prints error messages, stop and report them.
+
+---
+
+### Manual Verification
+
+#### Test 1 — Error Code Registry File Exists and Looks Right
+
+**What you're checking:** A new file was created that lists every possible error the API can return, so all routes use the same codes.
+
+**Steps:**
+1. In VS Code, open the file `src/constants/error-codes.ts`
+2. Scroll through the file. You should see blocks of exports organized by category (Auth, Organization, Incident, Personnel, Resources, QR Tokens, Billing, Rate Limiting, CSRF, Validation, Generic)
+3. Each export looks like this pattern:
+   ```
+   export const SOMETHING_SOMETHING = { code: 'SOMETHING_SOMETHING', status: 401 } as const;
+   ```
+4. At the bottom of the file, you should see a function called `errorResponse` that takes an error code and a message string
+5. Count the exports — there should be **28** error code constants (the lines that start with `export const` and have `{ code:`)
+
+**How to count quickly:** Press `Ctrl+Shift+F` in VS Code (global search). Search for `{ code: '` with the file filter set to `src/constants/error-codes.ts`. The match count shown in the sidebar should be **28**.
+
+**Expected result:** File exists, has 28 error codes organized by domain, and has an `errorResponse()` function at the bottom.
+
+---
+
+#### Test 2 — Pagination Utilities File Exists
+
+**What you're checking:** A new file was created with functions that handle splitting long lists into pages (like Google search results having page 1, 2, 3...).
+
+**Steps:**
+1. In VS Code, open `src/lib/pagination.ts`
+2. You should see two main sections, separated by comment headers:
+   - **"Offset-based pagination"** — this section has `parseOffsetParams` and `buildOffsetMeta`
+   - **"Cursor-based pagination"** — this section has `parseCursorParams`, `decodeCursor`, `encodeCursor`, and `buildCursorMeta`
+3. Check that the file is not huge — it should be around 130-140 lines
+
+**Expected result:** File exists with 6 exported functions across two pagination patterns.
+
+---
+
+#### Test 3 — Pagination Tests Pass With Expected Counts
+
+**What you're checking:** The pagination utility tests cover edge cases like missing parameters, huge page sizes, and empty result sets.
+
+**Steps:**
+1. Run this command in your terminal:
+   ```
+   npx vitest run src/lib/__tests__/pagination.test.ts
+   ```
+2. Look at the output. You should see something like:
+   ```
+    ✓ src/lib/__tests__/pagination.test.ts (26 tests)
+      ✓ parseOffsetParams (7 tests)
+      ✓ buildOffsetMeta (5 tests)
+      ✓ parseCursorParams (6 tests)
+      ✓ encodeCursor / decodeCursor (4 tests)
+      ✓ buildCursorMeta (4 tests)
+   ```
+3. The key number: **26 tests passed**, **0 failed**
+
+**Expected result:** All 26 tests pass. No failures, no skips.
+
+---
+
+#### Test 4 — Date Format File Exists and Tests Pass
+
+**What you're checking:** A new file was created with functions that format dates the way our app displays them (e.g., "03 Apr 2026 14:32 PDT").
+
+**Steps:**
+1. In VS Code, open `src/constants/date-format.ts`
+2. You should see:
+   - A constant called `DATE_FORMAT_OPTIONS` (the formatting rules)
+   - A function `formatIncidentTime(date, timezone)` — formats a date using the incident's timezone
+   - A function `formatLocalTime(date)` — formats a date using your computer's timezone
+3. Now run the tests:
+   ```
+   npx vitest run src/constants/__tests__/date-format.test.ts
+   ```
+4. You should see something like:
+   ```
+    ✓ src/constants/__tests__/date-format.test.ts (5 tests)
+      ✓ formatIncidentTime (3 tests)
+      ✓ formatLocalTime (2 tests)
+   ```
+
+**Expected result:** File exists with 2 functions + 1 constant. All 5 tests pass.
+
+---
+
+#### Test 5 — Seed Data (2-Step Process)
+
+**What you're checking:** Test users and app data are seeded into your Supabase project so you can log in and test features.
+
+**Why two steps?** Direct SQL INSERT into `auth.users` doesn't work on hosted Supabase — GoTrue (the auth service) has internal state that raw SQL can't replicate. So auth users are created via the Admin API (a script), and app data is created via SQL.
+
+**Step 1 — Create auth users (run from your terminal):**
+
+1. Make sure your `.env.local` file has these two variables set:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=eyJ...  (the long one from Supabase Dashboard → Settings → API)
+   ```
+2. Open a terminal in VS Code (`Ctrl+``)
+3. Run:
+   ```
+   npx tsx scripts/seed-auth-users.ts
+   ```
+4. You should see output like:
+   ```
+   Seeding 6 auth users...
+
+     Deleted existing: admin@alphasar.test   ← only if re-running
+     ...
+
+     Created: admin@alphasar.test (aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)
+     Created: ic@alphasar.test (bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb)
+     Created: ops@alphasar.test (cccccccc-cccc-cccc-cccc-cccccccccccc)
+     Created: field@alphasar.test (dddddddd-dddd-dddd-dddd-dddddddddddd)
+     Created: observer@alphasar.test (eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee)
+     Created: admin@betasar.test (ffffffff-ffff-ffff-ffff-ffffffffffff)
+
+   Done! 6/6 users created.
+   ```
+5. If you see "FAILED" for any user, copy the full error and report it.
+
+**Step 2 — Create app data (paste into Supabase SQL Editor):**
+
+1. Go to https://supabase.com/dashboard and open your project
+2. Click **"SQL Editor"** in the left sidebar
+3. Click **"+ New query"** (top-left area)
+4. Open `supabase/seed.sql` in VS Code, select ALL the text (`Ctrl+A`), copy it (`Ctrl+C`)
+5. Go back to the Supabase SQL Editor and paste (`Ctrl+V`) into the query editor
+6. Click the **"Run"** button (or press `Ctrl+Enter`)
+7. You should see: **"Success. No rows returned"** — that means it worked
+
+**Step 3 — Verify:**
+
+1. In the Supabase Dashboard, click **"Table Editor"** in the left sidebar
+   - Click on **`organizations`** — you should see "Alpha SAR Team" and "Beta SAR Team"
+   - Click on **`incidents`** — you should see "Lost Hiker — Mt. Rainier Trail" with status "active"
+   - Click on **`resources`** — you should see "Command Vehicle 1"
+2. Open your app in the browser (run `npm run dev` if not already running)
+3. Log out if you're logged in
+4. Log in with: **admin@alphasar.test** / **TestPassword1!**
+5. You should land on the dashboard and see "Alpha SAR Team" as your organization
+
+**Test credentials:**
+```
+admin@alphasar.test     / TestPassword1!
+ic@alphasar.test        / TestPassword1!
+ops@alphasar.test       / TestPassword1!
+field@alphasar.test     / TestPassword1!
+observer@alphasar.test  / TestPassword1!
+admin@betasar.test      / TestPassword1!
+```
+
+**Expected result:** Script creates 6/6 users. SQL runs without errors. Organizations, incidents, and resources appear in Table Editor. You can log in as admin@alphasar.test.
+
+---
+
+#### Test 6 — Build Log Has Session Index
+
+**What you're checking:** The build log now has a table at the top that lists all sessions in chronological order, so we always know which entry is the latest.
+
+**Steps:**
+1. In VS Code, open `build-log.md`
+2. Near the top of the file (after the template section), you should see:
+   ```
+   **Latest session: 16** (2026-04-03) — Update this number when appending a new entry.
+   ```
+3. Below that, there should be a markdown table titled "## Session Index (Chronological)" with rows from Session 0 through Session 16
+4. Session 16's row should say: `| 16 | 2026-04-03 | Build | Pre-Feature-3 infrastructure (error codes, pagination, dates, seed) |`
+5. Scroll to the very bottom of the file — the last entry should be "## Session 16" with a full build log entry
+
+**Expected result:** "Latest session: 16" marker is near the top. Session index table has 20 rows (sessions 0 through 16, plus addendums). Session 16 entry is at the bottom.
+
+---
+
+#### Test 7 — AGENTS.md Has New Patterns
+
+**What you're checking:** The AGENTS.md file (which Claude Code reads every session) now has critical patterns that prevent recurring bugs.
+
+**Steps:**
+1. In VS Code, open `AGENTS.md`
+2. You should see 5 sections, each wrapped in HTML comments like `<!-- BEGIN:name -->` and `<!-- END:name -->`:
+   - `nextjs-agent-rules` — Next.js 16 breaking changes (was already there)
+   - `supabase-types` — Supabase JS v2 type requirements (new)
+   - `zod-hookform` — Zod v4 + hookform resolver patterns (new)
+   - `shadcn-radix-nova` — shadcn component library patterns (new)
+   - `sentry-v10` — Sentry SDK v10 changes (new)
+
+**Expected result:** File has 5 clearly labeled sections. The 4 new ones contain bullet points with specific technical rules.
+
+---
+
+### Checklist
+- [ Pass ] Test 1 — Error code registry: 28 codes + errorResponse function
+- [ Pass ] Test 2 — Pagination file: 6 exported functions in 2 sections
+- [ Pass ] Test 3 — Pagination tests: 26/26 pass
+- [ Pass ] Test 4 — Date format file + tests: 5/5 pass
+- [ Pass ] Test 5 — Seed script: 8 sections, credentials documented
+- [ Pass ] Test 6 — Build log: "Latest session: 16" + index table
+- [ Pass ] Test 7 — AGENTS.md: 5 pattern sections
+
+Tested by: __Tyler Alex__ Date: __4/3/26__
 
 ---

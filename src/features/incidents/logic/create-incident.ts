@@ -1,5 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service'
 import type { CreateIncidentInput } from '@/features/incidents/schemas'
+import type { RequestMeta } from '@/lib/request-meta'
 
 // ─── Error Types ──────────────────────────────────────────────────────────────
 
@@ -29,6 +30,7 @@ export async function createIncident(
   organizationId: string,
   creatorUserId: string,
   input: CreateIncidentInput,
+  requestMeta?: RequestMeta,
 ): Promise<CreateIncidentResult> {
   const supabase = createServiceClient()
 
@@ -122,7 +124,26 @@ export async function createIncident(
     action: 'incident.created',
     resource_type: 'incident',
     resource_id: incidentId,
+    ip_address: requestMeta?.ipAddress ?? null,
+    user_agent: requestMeta?.userAgent ?? null,
     metadata: { incident_type: input.incidentType },
+  })
+
+  // Audit log for IC role assignment (SOC 2 — role changes are sensitive actions)
+  await supabase.from('audit_log').insert({
+    organization_id: organizationId,
+    actor_id: creatorUserId,
+    action: 'incident.role_assigned',
+    resource_type: 'incident_personnel',
+    resource_id: incidentId,
+    ip_address: requestMeta?.ipAddress ?? null,
+    user_agent: requestMeta?.userAgent ?? null,
+    metadata: {
+      incident_id: incidentId,
+      role: 'incident_commander',
+      previous_role: null,
+      member_id: member.id,
+    },
   })
 
   return { incidentId }

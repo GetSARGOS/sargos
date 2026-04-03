@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { initiatePar, InitiateParError } from '@/features/incidents/logic/initiate-par'
 import { InitiateParSchema } from '@/features/incidents/schemas'
+import { checkAuthenticatedRateLimit, rateLimitExceededResponse } from '@/lib/rate-limit'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -104,6 +105,12 @@ export async function POST(req: NextRequest, ctx: RouteContext): Promise<NextRes
       { data: null, error: { code: 'NO_ORGANIZATION', message: 'No active organization membership' }, meta: {} },
       { status: 403 },
     )
+  }
+
+  // Rate limit: 60 requests per minute per user
+  const rateLimit = await checkAuthenticatedRateLimit(user.id)
+  if (!rateLimit.success) {
+    return rateLimitExceededResponse(rateLimit.reset)
   }
 
   let body: unknown

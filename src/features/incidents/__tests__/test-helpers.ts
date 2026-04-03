@@ -5,9 +5,14 @@
  * internally. Tests mock @/lib/supabase/service and use these helpers to build
  * a Supabase client mock that satisfies the fluent query builder interface.
  */
-import { vi } from 'vitest'
+import { type Mock, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/database.types'
+
+export type MockSupabaseClient = SupabaseClient<Database> & {
+  from: Mock
+  rpc: Mock
+}
 
 // ─── Chain proxy ─────────────────────────────────────────────────────────────
 // Returns a proxy that acts as both a fluent builder and a thenable.
@@ -48,7 +53,7 @@ type RpcResponses = Partial<Record<string, unknown>>
 export function buildMockSupabase(
   tables: TableResponses = {},
   rpcs: RpcResponses = {},
-): SupabaseClient<Database> {
+): MockSupabaseClient {
   const callCounts: Record<string, number> = {}
 
   const from = vi.fn().mockImplementation((table: string) => {
@@ -71,7 +76,7 @@ export function buildMockSupabase(
     return makeChain(result)
   })
 
-  return { from, rpc } as unknown as SupabaseClient<Database>
+  return { from, rpc } as unknown as MockSupabaseClient
 }
 
 // ─── Convenience factories ────────────────────────────────────────────────────

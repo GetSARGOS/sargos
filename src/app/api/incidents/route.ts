@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createIncident, CreateIncidentError } from '@/features/incidents/logic/create-incident'
 import { CreateIncidentSchema } from '@/features/incidents/schemas'
+import { checkExpensiveRateLimit, rateLimitExceededResponse } from '@/lib/rate-limit'
+import { getRequestMeta } from '@/lib/request-meta'
 
 // ─── GET /api/incidents ───────────────────────────────────────────────────────
 // List the authenticated user's org incidents, active/planning first.
@@ -91,6 +93,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     )
   }
 
+  // Rate limit: 20 requests per minute per organization (expensive operation)
+  const rateLimit = await checkExpensiveRateLimit(member.organization_id)
+  if (!rateLimit.success) {
+    return rateLimitExceededResponse(rateLimit.reset)
+  }
+
   // Parse and validate body
   let body: unknown
   try {
@@ -119,7 +127,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    const result = await createIncident(member.organization_id, user.id, parsed.data)
+    const result = await createIncident(member.organization_id, user.id, parsed.data, getRequestMeta(req))
     return NextResponse.json(
       { data: { incidentId: result.incidentId }, error: null, meta: {} },
       { status: 201 },
