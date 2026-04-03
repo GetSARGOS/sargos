@@ -7,7 +7,7 @@
 
 ## How To Use This File
 
-After Claude Code completes a session and updates `build_log.md`, it will also append a new section here covering:
+After Claude Code completes a session and updates `build-log.md`, it will also append a new section here covering:
 - What was built and what to verify
 - Step-by-step manual test cases with exact inputs and expected outputs
 - Edge cases and failure scenarios to deliberately trigger
@@ -32,7 +32,7 @@ Claude Code uses this template when appending a new session's test instructions.
 ## Session [NUMBER] — [Feature Name]
 
 ### What Was Built
-[1–2 sentences describing what was completed this session — mirrors the build_log.md entry]
+[1–2 sentences describing what was completed this session — mirrors the build-log.md entry]
 
 ### Pre-Test Checklist
 Before running tests, confirm:
@@ -1694,5 +1694,53 @@ LIMIT 10;
 - [ Pass? ] Any failures documented and reported to Claude Code before next session
 
 Tested by: __Tyler Alex__ Date: __Tyler Alex__
+
+---
+
+## Session 10 — DX Tooling (2026-04-02)
+
+### What Was Built
+Developer experience tooling: Playwright, Vitest coverage, commitlint, lint-staged, PR template, and quick fixes. No feature code.
+
+### What To Verify
+
+#### Test 1: Unit tests still pass
+1. Run `npm test`
+2. **Expected**: 83 tests pass across 9 test files
+
+#### Test 2: TypeScript strict mode
+1. Run `npx tsc --noEmit`
+2. **Expected**: Zero errors
+
+#### Test 3: Commitlint enforcement
+1. Try a bad commit: `git commit --allow-empty -m "bad message"`
+2. **Expected**: Commit is rejected by commitlint (not conventional format)
+3. Try a good commit: `git commit --allow-empty -m "chore: test commitlint"`
+4. **Expected**: Commit succeeds
+5. Undo the test: `git reset HEAD~1`
+
+#### Test 4: Lint-staged runs on commit
+1. Stage a .ts file with a minor change
+2. Run `git commit -m "test(dx): lint-staged check"`
+3. **Expected**: You see lint-staged output running eslint --fix and secretlint on staged files before the commit completes
+
+#### Test 5: Playwright can run (requires dev server)
+1. Start the dev server: `npm run dev`
+2. In another terminal: `npm run test:e2e`
+3. **Expected**: Playwright launches Chromium and runs 7 tests. Results depend on whether the app is connected to Supabase.
+
+#### Test 6: Vitest coverage report
+1. Run `npm run test:coverage`
+2. **Expected**: Coverage report appears in terminal. `coverage/` directory created with lcov report.
+
+### Checklist
+- [ ] Test 1 — unit tests pass
+- [ ] Test 2 — TypeScript strict mode clean
+- [ ] Test 3 — commitlint blocks bad messages
+- [ ] Test 4 — lint-staged runs pre-commit
+- [ ] Test 5 — Playwright runs (with dev server)
+- [ ] Test 6 — coverage report generated
+
+Tested by: __________ Date: __________
 
 ---
