@@ -4,7 +4,7 @@ test.describe('QR Check-In (public)', () => {
   test('invalid token shows not-found error', async ({ page }) => {
     await page.goto('/check-in/invalid-token-12345')
     await expect(
-      page.getByText(/QR Code Not Found|not found|invalid/i),
+      page.getByRole('heading', { name: 'QR Code Not Found' }),
     ).toBeVisible()
   })
 

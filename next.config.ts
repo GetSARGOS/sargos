@@ -76,10 +76,12 @@ export default withSentryConfig(nextConfig, {
   // This is required to get readable stack traces in Sentry.
   widenClientFileUpload: true,
 
-  // Disable Sentry automatic instrumentation of Next.js server components —
-  // we add manual breadcrumbs for SAR-specific workflows instead.
-  autoInstrumentServerFunctions: true,
-  autoInstrumentMiddleware: false,
+  // Automatic instrumentation of server functions and middleware.
+  // Moved under `webpack` namespace in Sentry v10 (not supported with Turbopack).
+  webpack: {
+    autoInstrumentServerFunctions: true,
+    autoInstrumentMiddleware: false,
+  },
 
   // Disable the Sentry tunnel route — not needed at this stage.
   tunnelRoute: undefined,
