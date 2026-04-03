@@ -33,6 +33,7 @@ This stack is locked. Do not introduce technologies outside of it without explic
 - **Geospatial:** PostGIS extension — all geographic data uses PostGIS types and functions
 - **Edge Functions:** Supabase Edge Functions (Deno) for server-side logic that cannot live in Next.js API routes
 - **Realtime:** Supabase Realtime for all live collaboration features
+- **Rate Limiting:** Upstash Redis (`@upstash/ratelimit`) for serverless-compatible API rate limiting
 
 ### Auth
 - **Provider:** Supabase Auth — no third-party auth providers (Auth0, Clerk, etc.)
@@ -71,6 +72,7 @@ This stack is locked. Do not introduce technologies outside of it without explic
 - **Feature-based folder structure:** Organize code by feature domain (e.g., `/features/incidents`, `/features/resources`, `/features/ics-forms`), not by file type
 - **No god files:** No single file should exceed 400 lines. Break it up.
 - **No magic numbers or strings:** All constants go in a dedicated `/constants` directory with named exports
+- **Internationalization is deferred to post-MVP.** UI strings are hardcoded in English. When i18n is introduced, use ICU MessageFormat via `next-intl`. Do not prematurely abstract strings — the cost of retrofitting is lower than the cost of maintaining an i18n layer before it's needed.
 
 ### API Design
 - All Next.js API routes must validate input with Zod before processing
@@ -78,6 +80,7 @@ This stack is locked. Do not introduce technologies outside of it without explic
 - HTTP status codes must be semantically correct — never return 200 with an error in the body
 - All mutations must be idempotent where possible
 - Never expose raw database errors to the client — log them server-side, return sanitized messages
+- **API versioning:** Internal API routes are unversioned. When the public API is built (Feature 20), introduce URL-based versioning (`/api/v1/`). Until then, breaking changes to internal APIs are coordinated through the mobile app release cycle.
 
 ### Database
 - Every table must have: `id` (UUID, default `gen_random_uuid()`), `created_at`, `updated_at`
@@ -86,6 +89,10 @@ This stack is locked. Do not introduce technologies outside of it without explic
 - Migrations are versioned and sequential — never edit a migration that has already been applied
 - No application logic in triggers or functions unless it is purely data-integrity logic (e.g., cascades, timestamps)
 - PostGIS geometry columns must always have an SRID defined (use EPSG:4326 — WGS84)
+- **Migration rollback strategy differs by environment:**
+  - **Local development:** `supabase db reset` is the rollback tool. If a migration is wrong, fix or delete the migration file, then run `supabase db reset` to replay all migrations from scratch. This is the only environment where editing or deleting an applied migration is permitted.
+  - **Staging and production:** Never edit or delete an applied migration. Write a new compensating migration that corrects the issue (e.g., drop the bad column, rename the table back, restore the constraint). The compensating migration must have its own descriptive name (e.g., `018_fix_bad_column_from_017.sql`).
+  - **Before pushing to `dev`:** If a migration and its compensating migration have never left your local branch, you may squash them into a single corrected migration to keep history clean. Once a migration exists on `dev` or `main`, it is immutable.
 
 ### Multi-Tenancy
 - Every table that holds tenant data must have an `organization_id` column
@@ -107,12 +114,15 @@ This stack is locked. Do not introduce technologies outside of it without explic
 - **No client-side secrets.** The Supabase `service_role` key must never be exposed to the browser. Only the `anon` key with RLS goes to the client.
 - **Input sanitization.** All user-supplied input is validated with Zod before use. Never trust client data.
 - **SQL injection is impossible by design.** Use Supabase's query builder or parameterized queries only — never string-interpolate values into SQL.
-- **Authentication on every protected route.** Use Next.js middleware to enforce auth on all routes except explicitly public ones. No route is public by default.
+- **Authentication on every protected route.** Use the Next.js proxy (`src/proxy.ts`) to enforce auth on all routes except explicitly public ones. No route is public by default.
 - **RBAC enforced at two layers.** Role checks happen in both the API route and the RLS policy. Belt and suspenders.
 - **Audit logging.** Any mutation to incident data, resource data, or user roles must write to an immutable audit log table with the acting user's ID and a timestamp.
 - **HTTPS only.** Never allow HTTP. Enforce at the Vercel and Supabase level.
 - **Dependency hygiene.** Run `npm audit` regularly. Do not add dependencies with known high-severity vulnerabilities.
 - **Environment variables.** All environment variables must be documented in a `.env.example` file with placeholder values — never real values.
+- **CORS policy.** Default CORS policy is same-origin. Cross-origin access is not permitted until the mobile app or public API requires it. When introduced, use an explicit allowlist — never `Access-Control-Allow-Origin: *` on authenticated endpoints.
+- **CSRF protection.** All state-changing API routes must be protected against CSRF. For authenticated routes, the Supabase session cookie with `SameSite=Lax` provides implicit CSRF protection. For public POST endpoints (e.g., `/api/check-in/[token]`), validate the request origin header or use a CSRF token.
+- **Content Security Policy.** A Content-Security-Policy header must be configured before production launch. Start with a strict policy (`default-src 'self'`) and add exceptions as needed for Mapbox, Supabase, Sentry, and Stripe. CSP violations must be reported to Sentry.
 
 ---
 
@@ -138,7 +148,7 @@ This stack is locked. Do not introduce technologies outside of it without explic
 - **Data validation at the boundary.** Validate all data coming from the database before rendering it — do not assume the database always returns the expected shape.
 - **No silent failures.** All caught errors must be logged. A caught error that is swallowed with no log is a bug.
 - **Optimistic UI with rollback.** For real-time collaborative features, use optimistic updates but always implement rollback on failure.
-- **Realtime reconnection.** All Supabase Realtime subscriptions must implement reconnection logic — automatically resubscribe on connection drop.
+- **Realtime reconnection.** All Supabase Realtime subscriptions must implement reconnection logic — automatically resubscribe on connection drop. See Section 20 for full Realtime rules.
 
 ---
 
@@ -209,6 +219,7 @@ Testing is not optional on a life-safety platform. Claude Code must write tests 
 - Tests live in a `__tests__` folder adjacent to the file they test, or in a `tests/e2e` folder for Playwright
 - A feature is not complete until its critical-path tests pass
 - Never delete or skip a test to make a build pass — fix the code or the test
+- **Data seeding:** A database seed script (`supabase/seed.sql`) must exist with sample organizations, members, and incidents for local development. Seed data must never contain real PII. The seed script is not run in staging or production.
 
 ---
 
@@ -252,6 +263,7 @@ A React Native mobile app (using Expo) is planned. To avoid a full rewrite when 
 
 ### Rules
 - **Business logic must be framework-agnostic.** All logic that is not rendering (data fetching, state management, calculations, form validation, sync logic) must live in plain TypeScript modules under `/lib` or `/features/[domain]/logic`. It must not be tangled inside Next.js components or API routes.
+- **Business logic functions must accept a Supabase client as a parameter** — never import a client directly. This allows the same logic to be called with a server client (Next.js), a browser client (web), or a mobile client (React Native). Zod schemas and pure utility functions are inherently portable.
 - **Supabase client must be initialized in one shared location** and imported everywhere — never instantiated inline in a component
 - **Zod schemas are shared.** Define all validation schemas in a location that can eventually be shared between the web and mobile codebases (e.g., a `/packages/shared` directory if a monorepo is adopted)
 - **Design tokens and constants are shared.** Colors, spacing, and configuration values used in Tailwind on web should be mirrored in a constants file that React Native can consume
@@ -302,4 +314,127 @@ WCAG 2.1 AA compliance is required. This is a federal procurement requirement on
 
 ---
 
-*Last updated: Project kickoff — SAR SaaS v0.1*
+## 17. Rate Limiting & Request Limits
+
+### Rate Limiting
+- All API endpoints must be rate limited. Use **Upstash Redis** (`@upstash/ratelimit`) as the rate limiting backend — it is serverless-compatible and portable.
+- **Public endpoints** (e.g., `/api/check-in/[token]`): Rate limit per IP address. Default: 10 requests per minute.
+- **Authenticated endpoints**: Rate limit per authenticated user ID. Default: 60 requests per minute.
+- **Expensive operations** (incident creation, PDF export, bulk operations): Rate limit per organization ID. Default: 20 requests per minute.
+- Rate limit responses must return HTTP `429 Too Many Requests` with a `Retry-After` header.
+- Rate limiting is enforced in the API route handler, not in the proxy — the proxy must remain fast and stateless.
+
+### Request Body Size Limits
+- JSON request body size is capped at **1MB** (the Next.js default). Do not increase this limit without explicit justification.
+- File upload routes may increase the limit as needed, but must declare the limit explicitly in the route configuration.
+- Any route that accepts file uploads must validate content type and file size before processing.
+
+---
+
+## 18. Caching Strategy
+
+### HTTP Cache Headers
+- **All tenant-scoped API responses** must set `Cache-Control: private, no-store`. No exceptions. Never use `s-maxage` on routes that return organization-specific data — Vercel's CDN cache keys are URL-based and cannot safely isolate tenants.
+- **Public, non-tenant data** (if any exists in the future, e.g., a public status page) may use `s-maxage` with `stale-while-revalidate` for CDN caching.
+- Do not override Vercel's automatic caching for hashed static assets (`_next/static/**`) or the CDN auto-purge on deploy.
+
+### TanStack Query (React Query)
+- **Global default `staleTime`:** 30 seconds. Individual queries override as needed.
+- **Realtime-backed data** (incidents, personnel, resources): Set `staleTime: Infinity` and `gcTime: Infinity`. Supabase Realtime manages freshness — use `queryClient.invalidateQueries()` on Realtime events, not automatic refetching.
+- **Semi-stable data** (org profile, member directory, role lists): `staleTime: 5 minutes`, `gcTime: 10 minutes`.
+- **All tenant-scoped query keys must include `organizationId`.** On org switch or logout, call `queryClient.clear()` to wipe the entire cache — `invalidateQueries` is not sufficient because it may serve stale data from the previous org while refetching.
+- Prefer `invalidateQueries` over `setQueryData` for Realtime updates — Realtime sends change deltas, not full snapshots. On Realtime channel reconnect, always invalidate all queries that channel covers (events may have been missed during disconnect).
+
+### Map Tile Caching
+- Mapbox tile caching is handled by Mapbox's CDN and the browser's built-in cache (12-hour device TTL). Do not override Mapbox's cache headers.
+- Offline tile caching for field use is handled via a service worker with a **cache-first, network-fallback** strategy for Mapbox tile requests.
+- Tile caches must be populated from the end user's device only — never proxy or redistribute tiles server-side (Mapbox TOS violation).
+- Cached tiles must be evicted after **30 days** (Mapbox TOS maximum).
+- Only the active incident area is cached for offline use, not arbitrary regions.
+
+### What Must Never Be Cached
+- Tenant-scoped API responses at the CDN/proxy layer
+- Authentication tokens or session data
+- Supabase Realtime event payloads (these are transient push events, not cacheable resources)
+
+---
+
+## 19. Environment-Specific Rules
+
+Three environments exist: **local development**, **staging** (Vercel preview deployments from `dev`), and **production** (Vercel production from `main`).
+
+### What Differs by Environment
+- **Email confirmation:** Disabled in local dev (Supabase free-tier SMTP). Enabled in staging and production via Resend.
+- **Sentry:** Disabled in local dev unless `SENTRY_FORCE_ENABLED=true`. Enabled in staging and production.
+- **Stripe:** Test mode in local dev and staging. Live mode in production only.
+- **Rate limiting:** Relaxed or disabled in local dev for faster iteration. Enforced in staging and production.
+- **Seed data:** `supabase/seed.sql` runs in local dev only. Never in staging or production.
+
+### Dev-Only Utilities
+- **Dev-only routes, pages, and API endpoints are prohibited.** No `/api/dev/*`, no `/dev/*` pages. If a development shortcut is needed, implement it as a local script (`scripts/`) or a Supabase seed — never as a deployed route. A dev-only route that reaches production is a security incident.
+- Dev-only environment variables must be prefixed with `DEV_` and must never be set in Vercel project settings.
+
+### Environment Detection
+- Use `process.env.NODE_ENV` for build-time distinctions (`development` vs `production`).
+- Use `process.env.VERCEL_ENV` for runtime deployment context (`development`, `preview`, `production`).
+- Never branch application logic on environment — environment should only control configuration (DSNs, API keys, feature flags), not behavior.
+
+---
+
+## 20. Supabase Realtime Rules
+
+### Subscription Lifecycle
+- **The correct pattern:** Subscribe on `INITIAL_SESSION` (non-null session) with a `cancelled` flag to handle React Strict Mode double-invocation. `INITIAL_SESSION` fires once per listener registration after auth initialization (including token refresh), always with a valid session.
+- **Do not** subscribe inside `getSession().then()` — this races with `TOKEN_REFRESHED` on first load.
+- **Do not** handle `SIGNED_IN` for channel setup — it fires on every page load (cookie restore), causing double subscriptions.
+- **Do not** handle `TOKEN_REFRESHED` for channel re-creation — Supabase's internal listener already calls `setAuth(new_token)` on the socket.
+- **Do not** reconnect on `CLOSED` — CLOSED fires when the app calls `removeChannel`, causing infinite loops.
+- **Do** reconnect on `CHANNEL_ERROR` (real network failure). On reconnect, invalidate all React Query keys that channel covers — events may have been missed during the disconnect.
+
+### Channel Naming
+- Channel names follow the pattern: `{entity}-{scope-id}` (e.g., `incident-board-{incidentId}`, `personnel-{incidentId}`, `resources-{incidentId}`).
+- Always include the scoping ID in the channel name — never subscribe to a bare entity channel without a scope.
+
+### Channel Type Selection
+- **`postgres_changes`**: Use for database-driven state that multiple clients need to stay synchronized on (personnel status, resource assignments, incident updates). This is the default choice.
+- **`broadcast`**: Use for ephemeral, non-persisted events (cursor positions, typing indicators, map viewport sync). Data is not stored — if a client is offline when the event fires, it misses it.
+- **`presence`**: Use for online/active user tracking only (who is viewing this incident right now). Do not abuse presence for state synchronization.
+
+### Payload & Performance
+- Supabase Realtime has a **1MB message size limit**. Do not subscribe to tables with large text or JSONB columns without filtering via `.eq()` or column selection.
+- Subscriptions on inactive tabs should be **lazy-unmounted** to reduce connection load — except for Personnel and Resources tabs on the incident board, which must stay subscribed in the background for accountability.
+- Each page should subscribe to the minimum set of tables it needs. Do not subscribe to "everything" and filter client-side.
+
+---
+
+## 21. File Storage Rules (Supabase Storage)
+
+### Bucket Structure
+- One bucket per file category: `ics-forms`, `imports` (KML/KMZ/GPX), `flight-logs`, `photos`, `org-assets`.
+- Bucket names are lowercase kebab-case.
+- All buckets are **private by default**. Public buckets require explicit justification and approval.
+
+### File Path Convention
+- Files are stored at: `{organization_id}/{incident_id}/{filename}` for incident-scoped files, or `{organization_id}/{filename}` for org-scoped files (e.g., logos).
+- Filenames must be sanitized — no spaces, no special characters beyond hyphens and underscores. Use a UUID or timestamp prefix to prevent collisions.
+
+### Access Control
+- RLS policies on Supabase Storage must enforce `organization_id` scoping — a member of Org A must never access files belonging to Org B.
+- Signed URLs (time-limited) are the default access pattern for private files. Never generate permanent public URLs for tenant data.
+- Signed URL expiry: 1 hour default. Shorter for sensitive files (subject photos, medical documents).
+
+### Size & Type Limits
+- **ICS form PDFs:** Max 10MB per file.
+- **KML/KMZ/GPX imports:** Max 25MB per file.
+- **Drone flight logs:** Max 50MB per file.
+- **Photos:** Max 10MB per file. Accept JPEG, PNG, WebP, HEIC only.
+- **Org logos:** Max 2MB. Accept PNG, SVG, WebP only.
+- All uploads must validate content type server-side (not just the file extension) before writing to storage. Never trust the client-provided MIME type alone — read the file's magic bytes.
+
+### Retention
+- Files attached to closed incidents follow the org's data retention policy (soft-delete, then hard-delete after retention period).
+- Orphaned files (not referenced by any database record) must be cleaned up by a periodic job — do not rely on manual deletion.
+
+---
+
+*Last updated: 2026-04-01 — Gap resolution session (Sections 17–21 added, Sections 4, 5, 11, 14 updated)*

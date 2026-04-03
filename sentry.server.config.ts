@@ -7,7 +7,7 @@ Sentry.init({
 
   enabled: process.env.NODE_ENV === 'production' || process.env.SENTRY_FORCE_ENABLED === 'true',
 
-  // Never log PII to Sentry — log IDs only (claude_rules.md rule #8).
+  // Never log PII to Sentry — log IDs only (claude-rules.md rule #8).
   beforeSend(event) {
     if (event.user) {
       const { id } = event.user

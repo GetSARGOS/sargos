@@ -15,7 +15,7 @@ const eslintConfig = defineConfig([
   ]),
   {
     rules: {
-      // Enforce no `any` — matches claude_rules.md TypeScript rules
+      // Enforce no `any` — matches claude-rules.md TypeScript rules
       "@typescript-eslint/no-explicit-any": "error",
     },
   },

@@ -10,7 +10,7 @@ Sentry.init({
   enabled: process.env.NODE_ENV === 'production' || process.env.SENTRY_FORCE_ENABLED === 'true',
 
   // Never log PII to Sentry — scrub user data before sending.
-  // Log IDs only, per claude_rules.md rule #8 (No logging of PII).
+  // Log IDs only, per claude-rules.md rule #8 (No logging of PII).
   beforeSend(event) {
     if (event.user) {
       // Keep the ID for correlation — remove all identifying fields

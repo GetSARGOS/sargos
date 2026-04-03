@@ -1,12 +1,12 @@
 # Definition of Done — SAR SaaS Platform
-> Claude Code must satisfy every applicable item on this checklist before marking a feature complete and logging it in build_log.md. If an item does not apply to the current feature, mark it N/A with a one-line reason.
+> Claude Code must satisfy every applicable item on this checklist before marking a feature complete and logging it in build-log.md. If an item does not apply to the current feature, mark it N/A with a one-line reason.
 
 ---
 
 ## 1. Database
 
-- [ ] All new tables match the schema defined in `database_schema.md` exactly
-- [ ] No table or column exists that is not in `database_schema.md` — if a new one was needed, `database_schema.md` was updated first
+- [ ] All new tables match the schema defined in `database-schema.md` exactly
+- [ ] No table or column exists that is not in `database-schema.md` — if a new one was needed, `database-schema.md` was updated first
 - [ ] Migration file is created, named sequentially, and tested (apply → verify → rollback → re-apply)
 - [ ] RLS is enabled on every new table
 - [ ] RLS policies are written and tested for all roles (org_admin, member, IC, field_member, observer, unauthenticated)
@@ -107,7 +107,7 @@
 
 ## 10. Build Log
 
-- [ ] A new entry has been appended to `build_log.md` using the standard template
+- [ ] A new entry has been appended to `build-log.md` using the standard template
 - [ ] The entry documents: what was built, decisions made, deviations from the plan, any known issues, and what Claude Code should read next session
 
 ---
