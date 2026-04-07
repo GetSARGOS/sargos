@@ -60,6 +60,7 @@ organizations
   └── notifications
   └── audit_log
   └── subscriptions
+  └── referrals
 ```
 
 ---
@@ -1069,6 +1070,82 @@ CREATE INDEX idx_subscriptions_stripe_id ON subscriptions(stripe_subscription_id
 
 ---
 
+### `referrals`
+
+Tracks org-to-org referrals for the Community Referral Program (Feature 8b). Each org has a unique referral code and link. When a referred org converts to a paid plan, both parties receive account credits via Stripe customer balance.
+
+```sql
+CREATE TABLE referrals (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Referrer (the org that shared their code)
+  referrer_org_id       UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  referral_code         TEXT NOT NULL UNIQUE, -- verbal-friendly code e.g. 'MESA-SAR', 'KCSAR'
+  referral_link_token   UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(), -- for URL: /r/{token} or /join?ref={token}
+  -- Referred (the new org that used the code — null until signup)
+  referred_org_id       UUID REFERENCES organizations(id) ON DELETE SET NULL,
+  -- Lifecycle
+  status                TEXT NOT NULL DEFAULT 'pending' CHECK (status IN (
+                          'pending',     -- code created, not yet used
+                          'signed_up',   -- referred org created account but not yet paid
+                          'converted',   -- referred org completed first paid invoice
+                          'expired',     -- 90-day attribution window passed without conversion
+                          'rejected'     -- flagged as self-referral or fraud
+                        )),
+  -- Reward tracking
+  reward_status         TEXT NOT NULL DEFAULT 'pending' CHECK (reward_status IN (
+                          'pending',     -- conversion not yet happened
+                          'credited',    -- Stripe credits applied to both parties
+                          'failed',      -- credit application failed (logged to Sentry)
+                          'not_applicable' -- rejected or expired referral
+                        )),
+  referrer_credit_cents INTEGER NOT NULL DEFAULT 5000, -- $50.00 default
+  referred_credit_cents INTEGER NOT NULL DEFAULT 5000, -- $50.00 default
+  -- Milestone tracking (for tiered rewards)
+  referrer_total_conversions INTEGER NOT NULL DEFAULT 0, -- incremented on conversion; drives milestone logic
+  milestone_tier        TEXT DEFAULT NULL CHECK (milestone_tier IN (
+                          'base',           -- 1 referral: $50 credit
+                          'champion',       -- 3 referrals: $100 credit + badge
+                          'advocate',       -- 5 referrals: 1 month free
+                          'founding_partner' -- 10 referrals: permanent 10% discount
+                        )),
+  -- Attribution
+  attributed_at         TIMESTAMPTZ, -- when the referred org signed up via this code
+  converted_at          TIMESTAMPTZ, -- when the referred org's first paid invoice completed
+  expires_at            TIMESTAMPTZ, -- 90 days from attributed_at
+  -- Metadata
+  attribution_source    TEXT CHECK (attribution_source IN (
+                          'link',   -- clicked referral link
+                          'code',   -- entered code during signup
+                          'manual'  -- admin-attributed
+                        )),
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+**RLS Policies:**
+- `SELECT`: Org Admins can see referrals where their org is the referrer (`referrer_org_id`)
+- `INSERT`: System only — referral rows created during org onboarding flow (server-side)
+- `UPDATE`: System only — status transitions managed by Stripe webhook handlers
+- `DELETE`: Disabled
+
+**Indexes:**
+```sql
+CREATE INDEX idx_referrals_referrer_org_id ON referrals(referrer_org_id);
+CREATE INDEX idx_referrals_referred_org_id ON referrals(referred_org_id);
+CREATE INDEX idx_referrals_referral_code ON referrals(referral_code);
+CREATE INDEX idx_referrals_referral_link_token ON referrals(referral_link_token);
+CREATE INDEX idx_referrals_status ON referrals(status);
+```
+
+**Key Design Decisions:**
+- **`referral_code` is org-scoped, not per-referral.** Each org gets one code (e.g., `MESA-SAR`). Multiple referred orgs can use the same code — each creates a new row. The code persists for the life of the org.
+- **`referrer_total_conversions` is denormalized** on each referral row for the referrer org. This avoids a COUNT query on every milestone check. Updated via a server-side function on conversion.
+- **Stripe customer balance credits** are used instead of coupons. Credits accumulate on the Stripe customer balance and auto-apply to the next invoice. Applied via `stripe.customers.createBalanceTransaction()`.
+- **90-day attribution window** reflects SAR team procurement cycles (board votes, county budget approvals). The `expires_at` column is set to `attributed_at + 90 days`. A periodic job (or Stripe webhook check) marks expired referrals.
+
+---
+
 ## Exempt from Soft-Delete
 
 The following tables are append-only or immutable records. They do **not** have `deleted_at` by design. Do not add soft-delete to these tables.
@@ -1124,7 +1201,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 -- operational_periods, incident_command_structure, incident_subjects, incident_personnel,
 -- incident_sectors, incident_waypoints, incident_tracks, incident_flight_paths,
 -- incident_resources, ics_forms, k9_units, k9_deployments,
--- notifications, subscriptions
+-- notifications, subscriptions, referrals
 ```
 
 ---
@@ -1182,7 +1259,8 @@ When building migrations, always follow this dependency order:
 23. `notifications`
 24. `audit_log`
 25. `subscriptions`
-26. Triggers (applied last, after all tables exist)
+26. `referrals`
+27. Triggers (applied last, after all tables exist)
 
 ---
 

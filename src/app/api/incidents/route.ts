@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/service'
 import { createIncident, CreateIncidentError } from '@/features/incidents/logic/create-incident'
 import { CreateIncidentSchema } from '@/features/incidents/schemas'
 import { checkExpensiveRateLimit, rateLimitExceededResponse } from '@/lib/rate-limit'
+import { enforceTierLimit } from '@/lib/billing/enforce-tier'
 import { getRequestMeta } from '@/lib/request-meta'
 
 // ─── GET /api/incidents ───────────────────────────────────────────────────────
@@ -67,7 +69,7 @@ export async function GET(_req: NextRequest): Promise<NextResponse> {
 // ─── POST /api/incidents ──────────────────────────────────────────────────────
 // Create a new incident. The caller becomes the Incident Commander.
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export async function POST(req: NextRequest): Promise<Response> {
   const supabase = await createClient()
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -97,6 +99,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const rateLimit = await checkExpensiveRateLimit(member.organization_id)
   if (!rateLimit.success) {
     return rateLimitExceededResponse(rateLimit.reset)
+  }
+
+  // Tier enforcement: Free tier allows 1 active incident (Feature 8a)
+  const serviceClient = createServiceClient()
+  const tierDenied = await enforceTierLimit(serviceClient, member.organization_id, 'create_incident')
+  if (tierDenied) {
+    return tierDenied
   }
 
   // Parse and validate body

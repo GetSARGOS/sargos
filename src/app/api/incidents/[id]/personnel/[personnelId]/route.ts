@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { updatePersonnelStatus, UpdatePersonnelStatusError } from '@/features/incidents/logic/update-personnel-status'
 import { UpdatePersonnelSchema } from '@/features/incidents/schemas'
-import { getRequestMeta } from '@/lib/request-meta'
 
 type RouteContext = { params: Promise<{ id: string; personnelId: string }> }
 
@@ -64,8 +63,6 @@ export async function PATCH(req: NextRequest, ctx: RouteContext): Promise<NextRe
       member.display_name,
       personnelId,
       parsed.data,
-      user.id,
-      getRequestMeta(req),
     )
     return NextResponse.json(
       { data: { updated: true }, error: null, meta: {} },

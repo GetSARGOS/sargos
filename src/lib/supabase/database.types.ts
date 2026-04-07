@@ -320,6 +320,7 @@ export type Database = {
           checked_out_at: string | null
           checkin_method: string
           created_at: string
+          expected_return_at: string | null
           id: string
           incident_id: string
           incident_role: string | null
@@ -328,6 +329,7 @@ export type Database = {
           notes: string | null
           organization_id: string
           personnel_type: string
+          safety_briefing_acknowledged: boolean
           status: string
           updated_at: string
           volunteer_certifications: string[] | null
@@ -343,6 +345,7 @@ export type Database = {
           checked_out_at?: string | null
           checkin_method: string
           created_at?: string
+          expected_return_at?: string | null
           id?: string
           incident_id: string
           incident_role?: string | null
@@ -351,6 +354,7 @@ export type Database = {
           notes?: string | null
           organization_id: string
           personnel_type: string
+          safety_briefing_acknowledged?: boolean
           status?: string
           updated_at?: string
           volunteer_certifications?: string[] | null
@@ -366,6 +370,7 @@ export type Database = {
           checked_out_at?: string | null
           checkin_method?: string
           created_at?: string
+          expected_return_at?: string | null
           id?: string
           incident_id?: string
           incident_role?: string | null
@@ -374,6 +379,7 @@ export type Database = {
           notes?: string | null
           organization_id?: string
           personnel_type?: string
+          safety_briefing_acknowledged?: boolean
           status?: string
           updated_at?: string
           volunteer_certifications?: string[] | null
@@ -644,11 +650,117 @@ export type Database = {
           },
         ]
       }
+      incident_subjects: {
+        Row: {
+          age: number | null
+          clothing_description: string | null
+          created_at: string
+          deleted_at: string | null
+          emergency_contact_name: string | null
+          emergency_contact_phone: string | null
+          first_name: string
+          found_at: string | null
+          found_condition: string | null
+          found_location: unknown
+          gender: string | null
+          height_cm: number | null
+          id: string
+          incident_id: string
+          is_primary: boolean
+          known_conditions: string | null
+          last_known_point: unknown
+          last_name: string
+          last_seen_at: string | null
+          medical_notes: string | null
+          medications: string | null
+          organization_id: string
+          photo_urls: string[] | null
+          physical_description: string | null
+          subject_type: string | null
+          updated_at: string
+          weight_kg: number | null
+        }
+        Insert: {
+          age?: number | null
+          clothing_description?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          first_name: string
+          found_at?: string | null
+          found_condition?: string | null
+          found_location?: unknown
+          gender?: string | null
+          height_cm?: number | null
+          id?: string
+          incident_id: string
+          is_primary?: boolean
+          known_conditions?: string | null
+          last_known_point?: unknown
+          last_name: string
+          last_seen_at?: string | null
+          medical_notes?: string | null
+          medications?: string | null
+          organization_id: string
+          photo_urls?: string[] | null
+          physical_description?: string | null
+          subject_type?: string | null
+          updated_at?: string
+          weight_kg?: number | null
+        }
+        Update: {
+          age?: number | null
+          clothing_description?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          first_name?: string
+          found_at?: string | null
+          found_condition?: string | null
+          found_location?: unknown
+          gender?: string | null
+          height_cm?: number | null
+          id?: string
+          incident_id?: string
+          is_primary?: boolean
+          known_conditions?: string | null
+          last_known_point?: unknown
+          last_name?: string
+          last_seen_at?: string | null
+          medical_notes?: string | null
+          medications?: string | null
+          organization_id?: string
+          photo_urls?: string[] | null
+          physical_description?: string | null
+          subject_type?: string | null
+          updated_at?: string
+          weight_kg?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incident_subjects_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incident_subjects_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       incidents: {
         Row: {
           after_action_notes: string | null
           closed_at: string | null
           created_at: string
+          current_operational_period: number
           deleted_at: string | null
           id: string
           incident_number: string | null
@@ -663,12 +775,14 @@ export type Database = {
           started_at: string | null
           status: string
           suspended_at: string | null
+          timezone: string
           updated_at: string
         }
         Insert: {
           after_action_notes?: string | null
           closed_at?: string | null
           created_at?: string
+          current_operational_period?: number
           deleted_at?: string | null
           id?: string
           incident_number?: string | null
@@ -683,12 +797,14 @@ export type Database = {
           started_at?: string | null
           status?: string
           suspended_at?: string | null
+          timezone?: string
           updated_at?: string
         }
         Update: {
           after_action_notes?: string | null
           closed_at?: string | null
           created_at?: string
+          current_operational_period?: number
           deleted_at?: string | null
           id?: string
           incident_number?: string | null
@@ -703,11 +819,76 @@ export type Database = {
           started_at?: string | null
           status?: string
           suspended_at?: string | null
+          timezone?: string
           updated_at?: string
         }
         Relationships: [
           {
             foreignKeyName: "incidents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operational_periods: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          ends_at: string | null
+          id: string
+          incident_id: string
+          objectives: string | null
+          organization_id: string
+          period_number: number
+          starts_at: string
+          updated_at: string
+          weather_summary: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string | null
+          id?: string
+          incident_id: string
+          objectives?: string | null
+          organization_id: string
+          period_number: number
+          starts_at: string
+          updated_at?: string
+          weather_summary?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          ends_at?: string | null
+          id?: string
+          incident_id?: string
+          objectives?: string | null
+          organization_id?: string
+          period_number?: number
+          starts_at?: string
+          updated_at?: string
+          weather_summary?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operational_periods_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "organization_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operational_periods_incident_id_fkey"
+            columns: ["incident_id"]
+            isOneToOne: false
+            referencedRelation: "incidents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operational_periods_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -834,6 +1015,7 @@ export type Database = {
           max_members: number
           name: string
           region: string | null
+          seat_cap: number
           slug: string
           state: string | null
           stripe_customer_id: string | null
@@ -853,6 +1035,7 @@ export type Database = {
           max_members?: number
           name: string
           region?: string | null
+          seat_cap?: number
           slug: string
           state?: string | null
           stripe_customer_id?: string | null
@@ -872,6 +1055,7 @@ export type Database = {
           max_members?: number
           name?: string
           region?: string | null
+          seat_cap?: number
           slug?: string
           state?: string | null
           stripe_customer_id?: string | null
@@ -927,6 +1111,59 @@ export type Database = {
             foreignKeyName: "resources_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscriptions: {
+        Row: {
+          cancel_at_period_end: boolean | null
+          created_at: string
+          current_period_end: string | null
+          current_period_start: string | null
+          id: string
+          organization_id: string
+          status: string
+          stripe_price_id: string | null
+          stripe_subscription_id: string | null
+          tier: string
+          trial_ends_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          cancel_at_period_end?: boolean | null
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          organization_id: string
+          status: string
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          tier: string
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          cancel_at_period_end?: boolean | null
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          organization_id?: string
+          status?: string
+          stripe_price_id?: string | null
+          stripe_subscription_id?: string | null
+          tier?: string
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscriptions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },

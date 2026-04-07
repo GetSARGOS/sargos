@@ -25,7 +25,6 @@ const personnelRow = {
   id: PERSONNEL_ID,
   incident_id: INCIDENT_ID,
   status: 'available',
-  incident_role: 'field_member',
   member_id: 'member-uuid',
 }
 
@@ -45,25 +44,6 @@ describe('updatePersonnelStatus', () => {
     const result = await updatePersonnelStatus(
       ORG_ID, ACTOR_MEMBER_ID, ACTOR_NAME, PERSONNEL_ID,
       { status: 'assigned' },
-    )
-
-    expect(result.updated).toBe(true)
-  })
-
-  it('successfully updates incident role', async () => {
-    const mock = buildMockSupabase({
-      incident_personnel: [
-        ok(personnelRow),
-        ok(null),
-      ],
-      incident_log: ok(null),
-      audit_log: ok(null),
-    })
-    setup(mock)
-
-    const result = await updatePersonnelStatus(
-      ORG_ID, ACTOR_MEMBER_ID, ACTOR_NAME, PERSONNEL_ID,
-      { incidentRole: 'operations_section_chief' },
     )
 
     expect(result.updated).toBe(true)
@@ -112,9 +92,12 @@ describe('updatePersonnelStatus', () => {
   })
 
   it('throws UPDATE_FAILED when update fails', async () => {
+    // Provide error for all 3 retry attempts (withRetry maxAttempts=3)
     const mock = buildMockSupabase({
       incident_personnel: [
         ok(personnelRow),
+        err('23514'),
+        err('23514'),
         err('23514'),
       ],
     })

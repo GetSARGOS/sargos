@@ -11,6 +11,8 @@ export const AUTH_UNAUTHORIZED = { code: 'AUTH_UNAUTHORIZED', status: 401 } as c
 export const AUTH_SESSION_EXPIRED = { code: 'AUTH_SESSION_EXPIRED', status: 401 } as const;
 export const AUTH_FORBIDDEN = { code: 'AUTH_FORBIDDEN', status: 403 } as const;
 export const AUTH_NO_ORGANIZATION = { code: 'AUTH_NO_ORGANIZATION', status: 403 } as const;
+export const AUTH_RESET_RATE_LIMITED = { code: 'AUTH_RESET_RATE_LIMITED', status: 429 } as const;
+export const AUTH_RESET_FAILED = { code: 'AUTH_RESET_FAILED', status: 500 } as const;
 
 // -- Organization -----------------------------------------------------------
 export const ORG_SLUG_TAKEN = { code: 'ORG_SLUG_TAKEN', status: 409 } as const;
@@ -22,6 +24,9 @@ export const INCIDENT_NOT_FOUND = { code: 'INCIDENT_NOT_FOUND', status: 404 } as
 export const INCIDENT_CLOSED = { code: 'INCIDENT_CLOSED', status: 409 } as const;
 export const INCIDENT_ALREADY_CLOSED = { code: 'INCIDENT_ALREADY_CLOSED', status: 409 } as const;
 export const INCIDENT_NOT_ACTIVE = { code: 'INCIDENT_NOT_ACTIVE', status: 422 } as const;
+export const INCIDENT_SUSPENDED = { code: 'INCIDENT_SUSPENDED', status: 409 } as const;
+export const INCIDENT_INVALID_TRANSITION = { code: 'INCIDENT_INVALID_TRANSITION', status: 422 } as const;
+export const LOG_ENTRY_FAILED = { code: 'LOG_ENTRY_FAILED', status: 500 } as const;
 
 // -- Personnel --------------------------------------------------------------
 export const PERSONNEL_ALREADY_CHECKED_IN = { code: 'PERSONNEL_ALREADY_CHECKED_IN', status: 409 } as const;
@@ -44,6 +49,23 @@ export const TIER_SEAT_LIMIT = { code: 'TIER_SEAT_LIMIT', status: 403 } as const
 export const TIER_INCIDENT_LIMIT = { code: 'TIER_INCIDENT_LIMIT', status: 403 } as const;
 export const TIER_FEATURE_GATED = { code: 'TIER_FEATURE_GATED', status: 403 } as const;
 export const SUBSCRIPTION_LAPSED = { code: 'SUBSCRIPTION_LAPSED', status: 403 } as const;
+
+// -- Subjects ---------------------------------------------------------------
+export const SUBJECT_NOT_FOUND = { code: 'SUBJECT_NOT_FOUND', status: 404 } as const;
+export const SUBJECT_CREATE_FAILED = { code: 'SUBJECT_CREATE_FAILED', status: 500 } as const;
+export const SUBJECT_UPDATE_FAILED = { code: 'SUBJECT_UPDATE_FAILED', status: 500 } as const;
+export const SUBJECT_DELETE_FAILED = { code: 'SUBJECT_DELETE_FAILED', status: 500 } as const;
+
+// -- Command Structure ------------------------------------------------------
+export const ROLE_ALREADY_ASSIGNED = { code: 'ROLE_ALREADY_ASSIGNED', status: 409 } as const;
+export const ROLE_ASSIGNMENT_FAILED = { code: 'ROLE_ASSIGNMENT_FAILED', status: 500 } as const;
+export const HANDOFF_NOT_IC = { code: 'HANDOFF_NOT_IC', status: 403 } as const;
+export const HANDOFF_FAILED = { code: 'HANDOFF_FAILED', status: 500 } as const;
+
+// -- Operational Periods ----------------------------------------------------
+export const PERIOD_START_FAILED = { code: 'PERIOD_START_FAILED', status: 500 } as const;
+export const PERIOD_UPDATE_FAILED = { code: 'PERIOD_UPDATE_FAILED', status: 500 } as const;
+export const PERIOD_NOT_FOUND = { code: 'PERIOD_NOT_FOUND', status: 404 } as const;
 
 // -- Rate Limiting ----------------------------------------------------------
 export const RATE_LIMIT_EXCEEDED = { code: 'RATE_LIMIT_EXCEEDED', status: 429 } as const;

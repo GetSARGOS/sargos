@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import { withRetry } from '@/lib/retry'
 import type { UpdatePersonnelInput } from '@/features/incidents/schemas'
-import type { RequestMeta } from '@/lib/request-meta'
 
 // ─── Error Types ──────────────────────────────────────────────────────────────
 
@@ -26,15 +26,13 @@ export async function updatePersonnelStatus(
   actorDisplayName: string,
   personnelId: string,
   input: UpdatePersonnelInput,
-  actorUserId?: string,
-  requestMeta?: RequestMeta,
 ): Promise<{ updated: boolean }> {
   const supabase = createServiceClient()
 
   // Verify this personnel record belongs to the caller's org
   const { data: personnel, error: fetchError } = await supabase
     .from('incident_personnel')
-    .select('id, incident_id, status, incident_role, member_id')
+    .select('id, incident_id, status, member_id')
     .eq('id', personnelId)
     .eq('organization_id', organizationId)
     .single()
@@ -48,22 +46,20 @@ export async function updatePersonnelStatus(
   if (input.status !== undefined) {
     updatePayload['status'] = input.status
   }
-  if (input.incidentRole !== undefined) {
-    updatePayload['incident_role'] = input.incidentRole
-  }
   if (input.checkout === true) {
     updatePayload['checked_out_at'] = new Date().toISOString()
   }
 
-  const { error: updateError } = await supabase
-    .from('incident_personnel')
-    .update(updatePayload)
-    .eq('id', personnelId)
-
-  if (updateError) {
-    console.error('[updatePersonnelStatus] update failed:', updateError.code)
+  // Critical mutation — retry on transient network failure
+  await withRetry(async () => {
+    const { error } = await supabase
+      .from('incident_personnel')
+      .update(updatePayload)
+      .eq('id', personnelId)
+    if (error) throw error
+  }).catch(() => {
     throw new UpdatePersonnelStatusError('UPDATE_FAILED', 'Failed to update personnel record')
-  }
+  })
 
   // If checking out, adjust any active PAR event so the denominator and confirmed_count
   // stay correct. The Realtime UPDATE on incident_par_events propagates to all clients.
@@ -78,11 +74,16 @@ export async function updatePersonnelStatus(
 
     if (activePar) {
       // Remove the person's PAR response (if any) so confirmed_count stays accurate
-      await supabase
-        .from('incident_par_responses')
-        .delete()
-        .eq('par_event_id', activePar.id)
-        .eq('personnel_id', personnelId)
+      await withRetry(async () => {
+        const { error } = await supabase
+          .from('incident_par_responses')
+          .delete()
+          .eq('par_event_id', activePar.id)
+          .eq('personnel_id', personnelId)
+        if (error) throw error
+      }).catch((err) => {
+        console.error('[updatePersonnelStatus] PAR response delete failed:', err)
+      })
 
       // Recalculate confirmed_count from the remaining responses
       const { count: remainingCount } = await supabase
@@ -102,10 +103,15 @@ export async function updatePersonnelStatus(
         parUpdatePayload['completed_at'] = new Date().toISOString()
       }
 
-      await supabase
-        .from('incident_par_events')
-        .update(parUpdatePayload)
-        .eq('id', activePar.id)
+      await withRetry(async () => {
+        const { error } = await supabase
+          .from('incident_par_events')
+          .update(parUpdatePayload)
+          .eq('id', activePar.id)
+        if (error) throw error
+      }).catch((err) => {
+        console.error('[updatePersonnelStatus] PAR event update failed:', err)
+      })
     }
   }
 
@@ -119,37 +125,6 @@ export async function updatePersonnelStatus(
       actor_id: actorMemberId,
       actor_name: actorDisplayName,
       metadata: { personnel_id: personnelId },
-    })
-  } else if (input.incidentRole !== undefined) {
-    await supabase.from('incident_log').insert({
-      incident_id: personnel.incident_id,
-      organization_id: organizationId,
-      entry_type: 'role_assigned',
-      message: `Incident role updated to ${input.incidentRole ?? 'none'}`,
-      actor_id: actorMemberId,
-      actor_name: actorDisplayName,
-      metadata: {
-        personnel_id: personnelId,
-        previous_role: personnel.incident_role,
-        new_role: input.incidentRole,
-      },
-    })
-
-    // Audit log for role changes (SOC 2 — sensitive action)
-    await supabase.from('audit_log').insert({
-      organization_id: organizationId,
-      actor_id: actorUserId ?? actorMemberId,
-      action: 'incident.role_assigned',
-      resource_type: 'incident_personnel',
-      resource_id: personnelId,
-      ip_address: requestMeta?.ipAddress ?? null,
-      user_agent: requestMeta?.userAgent ?? null,
-      metadata: {
-        incident_id: personnel.incident_id,
-        role: input.incidentRole,
-        previous_role: personnel.incident_role ?? null,
-        personnel_id: personnelId,
-      },
     })
   } else if (input.status !== undefined) {
     await supabase.from('incident_log').insert({

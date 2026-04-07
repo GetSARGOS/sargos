@@ -82,7 +82,21 @@ export async function createOrganization(
     throw new CreateOrganizationError('MEMBER_CREATE_FAILED')
   }
 
-  // Step 3: Write audit log entry (best-effort — failure should not block onboarding)
+  // Step 3: Seed Free tier subscription (best-effort — failure should not block onboarding)
+  // Every org starts on Free tier. Stripe integration (Feature 8b) handles upgrades.
+  const { error: subError } = await serviceClient
+    .from('subscriptions')
+    .insert({
+      organization_id: org.id,
+      tier: 'free',
+      status: 'active',
+    })
+
+  if (subError) {
+    console.error('[createOrganization] subscription seed failed:', subError.code)
+  }
+
+  // Step 4: Write audit log entry (best-effort — failure should not block onboarding)
   // Service role is used here because audit_log has no client INSERT policy by design.
   await serviceClient.from('audit_log').insert({
     organization_id: org.id,

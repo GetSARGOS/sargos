@@ -11,13 +11,17 @@ import type { Database } from '@/lib/supabase/database.types'
 // All other paths are protected by default (security-first).
 const PUBLIC_PATHS = [
   '/auth/callback',
+  '/auth/confirm',
   '/auth/auth-code-error',
   '/login',
   '/signup',
+  '/forgot-password',
   '/check-in',  // volunteer QR check-in — no account needed
 ]
 
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
+  const pathname = request.nextUrl.pathname
+
   // IMPORTANT: Do not add logic between createServerClient and getUser().
   // The session refresh relies on both being called in sequence without
   // intermediate awaits that could interfere with cookie propagation.
@@ -54,7 +58,6 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     data: { user },
   } = await supabase.auth.getUser()
 
-  const pathname = request.nextUrl.pathname
   const isPublicPath = PUBLIC_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`)
   )

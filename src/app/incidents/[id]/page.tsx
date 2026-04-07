@@ -2,25 +2,15 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { PersonnelBoard, type PersonnelWithMember } from '@/features/incidents/components/personnel-board'
-import { QrPanel } from '@/features/incidents/components/qr-panel'
-import { ParPanel, type ParEvent, type ParResponse } from '@/features/incidents/components/par-panel'
-import { ResourceBoard, type DeployedResource, type AvailableResource } from '@/features/incidents/components/resource-board'
-import {
-  INCIDENT_TYPE_LABELS,
-  type IncidentType,
-  type IncidentStatus,
-} from '@/features/incidents/schemas'
+import { IncidentBoard, type IncidentData } from '@/features/incidents/components/incident-board'
+import type { PersonnelWithMember } from '@/features/incidents/components/personnel-board'
+import type { ParEvent, ParResponse } from '@/features/incidents/components/par-panel'
+import type { DeployedResource, AvailableResource } from '@/features/incidents/components/resource-board'
+import type { CommandStructureRow, OperationalPeriodData } from '@/features/incidents/components/incident-overview'
+import type { SubjectRow } from '@/features/incidents/components/subject-list'
 
 export const metadata: Metadata = {
   title: 'Incident Board — SARGOS',
-}
-
-const STATUS_STYLES: Record<IncidentStatus, string> = {
-  active: 'bg-green-100 text-green-800',
-  planning: 'bg-blue-100 text-blue-800',
-  suspended: 'bg-yellow-100 text-yellow-800',
-  closed: 'bg-muted text-muted-foreground',
 }
 
 type PageProps = { params: Promise<{ id: string }> }
@@ -39,7 +29,7 @@ export default async function IncidentPage({ params }: PageProps) {
 
   const { data: membership } = await supabase
     .from('organization_members')
-    .select('id, organization_id, display_name')
+    .select('id, organization_id, display_name, role')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .maybeSingle()
@@ -48,11 +38,12 @@ export default async function IncidentPage({ params }: PageProps) {
     redirect('/onboarding')
   }
 
-  // Fetch the incident — verify it belongs to this org
+  const isOrgAdmin = membership.role === 'org_admin'
 
+  // Fetch the incident
   const { data: incident } = await supabase
     .from('incidents')
-    .select('id, name, incident_type, status, location_address, started_at, organization_id')
+    .select('id, name, incident_type, status, location_address, started_at, organization_id, timezone, current_operational_period')
     .eq('id', id)
     .eq('organization_id', membership.organization_id)
     .is('deleted_at', null)
@@ -62,33 +53,119 @@ export default async function IncidentPage({ params }: PageProps) {
     notFound()
   }
 
-  // Fetch org members for the check-in dropdown
-  const { data: orgMemberRows } = await supabase
-    .from('organization_members')
-    .select('id, display_name')
-    .eq('organization_id', membership.organization_id)
-    .eq('is_active', true)
-    .is('deleted_at', null)
-    .order('display_name', { ascending: true })
+  // Parallel data fetches for all tabs
+  const [
+    orgMemberRows,
+    personnelRows,
+    parEventRow,
+    incidentResourceRows,
+    availableResourceRows,
+    qrTokenRows,
+    commandStructureRows,
+    subjectRows,
+    currentPeriodRow,
+  ] = await Promise.all([
+    // Org members for check-in dropdown
+    supabase
+      .from('organization_members')
+      .select('id, display_name')
+      .eq('organization_id', membership.organization_id)
+      .eq('is_active', true)
+      .is('deleted_at', null)
+      .order('display_name', { ascending: true })
+      .then((r) => r.data ?? []),
 
-  const initialOrgMembers = (orgMemberRows ?? []).map((m) => ({
+    // Personnel
+    supabase
+      .from('incident_personnel')
+      .select('*')
+      .eq('incident_id', id)
+      .eq('organization_id', membership.organization_id)
+      .is('checked_out_at', null)
+      .order('checked_in_at', { ascending: true })
+      .then((r) => r.data ?? []),
+
+    // Latest PAR event
+    supabase
+      .from('incident_par_events')
+      .select('*')
+      .eq('incident_id', id)
+      .eq('organization_id', membership.organization_id)
+      .order('initiated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then((r) => r.data),
+
+    // Deployed resources
+    supabase
+      .from('incident_resources')
+      .select('*')
+      .eq('incident_id', id)
+      .eq('organization_id', membership.organization_id)
+      .in('status', ['requested', 'deployed'])
+      .order('checked_out_at', { ascending: true })
+      .then((r) => r.data ?? []),
+
+    // Available resources
+    supabase
+      .from('resources')
+      .select('id, name, category, identifier, status')
+      .eq('organization_id', membership.organization_id)
+      .eq('status', 'available')
+      .is('deleted_at', null)
+      .order('name', { ascending: true })
+      .then((r) => r.data ?? []),
+
+    // QR tokens
+    supabase
+      .from('incident_qr_tokens')
+      .select('id, token, is_active, scans, created_at')
+      .eq('incident_id', id)
+      .order('created_at', { ascending: false })
+      .then((r) => r.data ?? []),
+
+    // Command structure (all rows — active + relieved for history)
+    supabase
+      .from('incident_command_structure')
+      .select('id, ics_role, member_id, assigned_at, relieved_at')
+      .eq('incident_id', id)
+      .eq('organization_id', membership.organization_id)
+      .order('assigned_at', { ascending: true })
+      .then((r) => r.data ?? []),
+
+    // Subjects (non-PHI columns, primary first)
+    supabase
+      .from('incident_subjects')
+      .select('id, first_name, last_name, age, gender, height_cm, weight_kg, physical_description, clothing_description, subject_type, last_seen_at, is_primary, found_condition, found_at, created_at')
+      .eq('incident_id', id)
+      .eq('organization_id', membership.organization_id)
+      .is('deleted_at', null)
+      .order('is_primary', { ascending: false })
+      .order('created_at', { ascending: true })
+      .then((r) => r.data ?? []),
+
+    // Current operational period (open — no ends_at)
+    supabase
+      .from('operational_periods')
+      .select('id, period_number, starts_at, objectives, weather_summary')
+      .eq('incident_id', id)
+      .eq('organization_id', membership.organization_id)
+      .is('ends_at', null)
+      .order('period_number', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then((r) => r.data),
+  ])
+
+  const initialOrgMembers = orgMemberRows.map((m) => ({
     id: m.id,
     display_name: m.display_name,
   }))
 
-  // Fetch initial personnel list, then member names separately
-  // (relational join not supported in hand-authored type stubs)
-  const { data: personnelRows } = await supabase
-    .from('incident_personnel')
-    .select('*')
-    .eq('incident_id', id)
-    .eq('organization_id', membership.organization_id)
-    .is('checked_out_at', null)
-    .order('checked_in_at', { ascending: true })
-
-  const memberIds = (personnelRows ?? [])
+  // Resolve member names for personnel
+  const memberIds = personnelRows
     .map((p) => p.member_id)
-    .filter((id): id is string => id !== null)
+    .filter((mid): mid is string => mid !== null)
 
   const memberMap = new Map<string, { display_name: string; phone: string | null; certifications: string[] }>()
   if (memberIds.length > 0) {
@@ -101,7 +178,7 @@ export default async function IncidentPage({ params }: PageProps) {
     }
   }
 
-  const personnel: PersonnelWithMember[] = (personnelRows ?? []).map((p) => {
+  const personnel: PersonnelWithMember[] = personnelRows.map((p) => {
     const member = p.member_id ? memberMap.get(p.member_id) : undefined
     return {
       ...p,
@@ -113,16 +190,14 @@ export default async function IncidentPage({ params }: PageProps) {
     }
   })
 
-  // Fetch latest PAR event and responses for the ParPanel
-  const { data: parEventRow } = await supabase
-    .from('incident_par_events')
-    .select('*')
-    .eq('incident_id', id)
-    .eq('organization_id', membership.organization_id)
-    .order('initiated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  // Compute current user's incident role and checked-in member IDs
+  const currentUserPersonnel = personnelRows.find((p) => p.member_id === membership.id)
+  const currentUserIncidentRole = (currentUserPersonnel?.incident_role as string | null) ?? null
+  const checkedInMemberIds = personnelRows
+    .map((p) => p.member_id)
+    .filter((mid): mid is string => mid !== null)
 
+  // PAR data
   const initialParEvent: ParEvent | null = parEventRow
     ? {
         id: parEventRow.id,
@@ -155,16 +230,8 @@ export default async function IncidentPage({ params }: PageProps) {
     }
   }
 
-  // Fetch deployed resources for the ResourceBoard
-  const { data: incidentResourceRows } = await supabase
-    .from('incident_resources')
-    .select('*')
-    .eq('incident_id', id)
-    .eq('organization_id', membership.organization_id)
-    .in('status', ['requested', 'deployed'])
-    .order('checked_out_at', { ascending: true })
-
-  const deployedResourceIds = (incidentResourceRows ?? []).map((r) => r.resource_id)
+  // Resources with detail lookup
+  const deployedResourceIds = incidentResourceRows.map((r) => r.resource_id)
   const resourceDetailMap = new Map<string, { name: string; category: string; identifier: string | null }>()
   if (deployedResourceIds.length > 0) {
     const { data: resourceDetailRows } = await supabase
@@ -176,7 +243,7 @@ export default async function IncidentPage({ params }: PageProps) {
     }
   }
 
-  const initialDeployedResources: DeployedResource[] = (incidentResourceRows ?? []).map((ir) => ({
+  const initialDeployedResources: DeployedResource[] = incidentResourceRows.map((ir) => ({
     id: ir.id,
     resource_id: ir.resource_id,
     status: ir.status as DeployedResource['status'],
@@ -188,16 +255,7 @@ export default async function IncidentPage({ params }: PageProps) {
     resourceIdentifier: resourceDetailMap.get(ir.resource_id)?.identifier ?? null,
   }))
 
-  // Fetch available org resources for the deploy panel
-  const { data: availableResourceRows } = await supabase
-    .from('resources')
-    .select('id, name, category, identifier, status')
-    .eq('organization_id', membership.organization_id)
-    .eq('status', 'available')
-    .is('deleted_at', null)
-    .order('name', { ascending: true })
-
-  const initialAvailableResources: AvailableResource[] = (availableResourceRows ?? []).map((r) => ({
+  const initialAvailableResources: AvailableResource[] = availableResourceRows.map((r) => ({
     id: r.id,
     name: r.name,
     category: r.category,
@@ -205,20 +263,80 @@ export default async function IncidentPage({ params }: PageProps) {
     status: r.status,
   }))
 
-  // Fetch initial QR tokens for the QrPanel
-  const { data: qrTokenRows } = await supabase
-    .from('incident_qr_tokens')
-    .select('id, token, is_active, scans, created_at')
-    .eq('incident_id', id)
-    .order('created_at', { ascending: false })
-
-  const initialQrTokens = (qrTokenRows ?? []).map((t) => ({
+  const initialQrTokens = qrTokenRows.map((t) => ({
     id: t.id,
     token: t.token,
     is_active: t.is_active,
     scans: t.scans,
     created_at: t.created_at,
   }))
+
+  // Resolve command structure member names
+  const commandMemberIds = commandStructureRows
+    .map((r) => r.member_id)
+    .filter((mid): mid is string => mid !== null)
+
+  const commandMemberMap = new Map<string, string>()
+  if (commandMemberIds.length > 0) {
+    const { data: commandMembers } = await supabase
+      .from('organization_members')
+      .select('id, display_name')
+      .in('id', commandMemberIds)
+    for (const m of commandMembers ?? []) {
+      commandMemberMap.set(m.id, m.display_name)
+    }
+  }
+
+  const initialCommandStructure: CommandStructureRow[] = commandStructureRows.map((r) => ({
+    id: r.id,
+    ics_role: r.ics_role,
+    member_id: r.member_id,
+    assigned_at: r.assigned_at,
+    relieved_at: r.relieved_at,
+    memberName: r.member_id ? commandMemberMap.get(r.member_id) ?? null : null,
+  }))
+
+  // Map subjects to SubjectRow
+  const initialSubjects: SubjectRow[] = subjectRows.map((s) => ({
+    id: s.id,
+    first_name: s.first_name,
+    last_name: s.last_name,
+    age: s.age,
+    gender: s.gender,
+    height_cm: s.height_cm,
+    weight_kg: s.weight_kg,
+    physical_description: s.physical_description,
+    clothing_description: s.clothing_description,
+    subject_type: s.subject_type,
+    last_seen_at: s.last_seen_at,
+    is_primary: s.is_primary,
+    found_condition: s.found_condition,
+    found_at: s.found_at,
+    created_at: s.created_at,
+  }))
+
+  // Map current operational period
+  const initialCurrentPeriod: OperationalPeriodData | null = currentPeriodRow
+    ? {
+        id: currentPeriodRow.id,
+        period_number: currentPeriodRow.period_number,
+        starts_at: currentPeriodRow.starts_at,
+        objectives: currentPeriodRow.objectives,
+        weather_summary: currentPeriodRow.weather_summary,
+      }
+    : null
+
+  const incidentData: IncidentData = {
+    id: incident.id,
+    name: incident.name,
+    incident_type: incident.incident_type,
+    status: incident.status,
+    location_address: incident.location_address,
+    started_at: incident.started_at,
+    organization_id: incident.organization_id,
+    timezone: incident.timezone,
+    current_operational_period: incident.current_operational_period,
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -247,76 +365,25 @@ export default async function IncidentPage({ params }: PageProps) {
       </header>
 
       {/* Main content */}
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        {/* Incident header */}
-        <div className="mb-8">
-          <div className="flex items-start gap-4">
-            <div className="flex-1">
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-semibold">{incident.name}</h1>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[incident.status as IncidentStatus] ?? 'bg-muted text-muted-foreground'}`}
-                >
-                  {incident.status.charAt(0).toUpperCase() + incident.status.slice(1)}
-                </span>
-              </div>
-              <div className="mt-1 flex items-center gap-4 text-sm text-muted-foreground">
-                <span>
-                  {INCIDENT_TYPE_LABELS[incident.incident_type as IncidentType] ?? incident.incident_type}
-                </span>
-                {incident.location_address && (
-                  <>
-                    <span>·</span>
-                    <span>{incident.location_address}</span>
-                  </>
-                )}
-                {incident.started_at && (
-                  <>
-                    <span>·</span>
-                    <span>
-                      Started {new Date(incident.started_at).toLocaleString()}
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Personnel board — client component with Supabase Realtime */}
-        <PersonnelBoard
-          incidentId={incident.id}
+      <main className="mx-auto max-w-6xl px-6 py-6">
+        <IncidentBoard
+          incident={incidentData}
           orgId={membership.organization_id}
           initialPersonnel={personnel}
           initialOrgMembers={initialOrgMembers}
+          initialParEvent={initialParEvent}
+          initialParResponses={initialParResponses}
+          initialDeployedResources={initialDeployedResources}
+          initialAvailableResources={initialAvailableResources}
+          initialQrTokens={initialQrTokens}
+          initialCommandStructure={initialCommandStructure}
+          initialSubjects={initialSubjects}
+          initialCurrentPeriod={initialCurrentPeriod}
+          checkedInMemberIds={checkedInMemberIds}
+          currentUserMemberId={membership.id}
+          currentUserIncidentRole={currentUserIncidentRole}
+          isOrgAdmin={isOrgAdmin}
         />
-
-        {/* PAR roll call panel */}
-        <div className="mt-6">
-          <ParPanel
-            incidentId={incident.id}
-            initialParEvent={initialParEvent}
-            initialResponses={initialParResponses}
-            personnel={personnel}
-          />
-        </div>
-
-        {/* Equipment & resources board */}
-        <div className="mt-6">
-          <ResourceBoard
-            incidentId={incident.id}
-            initialDeployedResources={initialDeployedResources}
-            initialAvailableResources={initialAvailableResources}
-          />
-        </div>
-
-        {/* QR check-in panel */}
-        <div className="mt-6">
-          <QrPanel
-            incidentId={incident.id}
-            initialTokens={initialQrTokens}
-          />
-        </div>
       </main>
     </div>
   )

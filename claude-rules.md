@@ -10,10 +10,11 @@ This is a **Search and Rescue (SAR) SaaS platform** serving volunteer and profes
 - Correctness and reliability always outrank speed of delivery
 - Never take shortcuts that could compromise data integrity or system availability
 - **Compliance roadmap — current state vs target:**
-  - **Current (MVP):** SOC 2-ready architecture. No PHI collected or displayed. No HIPAA obligations at this tier.
+  - **Current (MVP):** SOC 2-ready architecture. No PHI collected or displayed. No HIPAA obligations at this tier. US-only market.
   - **Target (pre-Professional tier sales):** Supabase Team plan + HIPAA add-on + signed BAA. PHI fields enabled in UI. Application-level encryption for PHI columns. PHI read-access logging. Consult a HIPAA attorney before enabling.
   - **Target (Enterprise tier):** FedRAMP authorization. AWS GovCloud migration. SAML/SSO.
-- Every architectural decision should keep the SOC 2 → HIPAA → FedRAMP path open, but MVP ships without HIPAA obligations by not collecting PHI
+  - **Target (International expansion):** GDPR compliance (EU). Data residency controls (multi-region Supabase or regional deployments). PIPEDA compliance (Canada). Privacy Impact Assessments per market. Consult a data protection attorney before entering any non-US market. See Section 22 for internationalization architecture rules.
+- Every architectural decision should keep the SOC 2 → HIPAA → FedRAMP → International path open, but MVP ships without HIPAA or international obligations
 
 ---
 
@@ -111,10 +112,11 @@ This stack is locked. Do not introduce technologies outside of it without explic
 - Migrations are versioned and sequential — never edit a migration that has already been applied
 - No application logic in triggers or functions unless it is purely data-integrity logic (e.g., cascades, timestamps)
 - PostGIS geometry columns must always have an SRID defined (use EPSG:4326 — WGS84)
-- **Migration rollback strategy differs by environment:**
-  - **Local development:** `supabase db reset` is the rollback tool. If a migration is wrong, fix or delete the migration file, then run `supabase db reset` to replay all migrations from scratch. This is the only environment where editing or deleting an applied migration is permitted.
-  - **Staging and production:** Never edit or delete an applied migration. Write a new compensating migration that corrects the issue (e.g., drop the bad column, rename the table back, restore the constraint). The compensating migration must have its own descriptive name (e.g., `018_fix_bad_column_from_017.sql`).
-  - **Before pushing to `dev`:** If a migration and its compensating migration have never left your local branch, you may squash them into a single corrected migration to keep history clean. Once a migration exists on `dev` or `main`, it is immutable.
+- **No local Supabase / Docker.** This project does not use Docker or a local Supabase stack. The Next.js dev server runs against a Supabase Cloud development project. Migrations are applied via the Supabase Cloud SQL Editor (or `supabase db push` against the cloud project). Never run `supabase start`, `supabase db reset`, or any command that requires Docker.
+- **Migration rollback strategy:**
+  - **Dev Supabase project (pre-merge to `dev`):** If a migration has only been applied to your personal Supabase Cloud dev project and has never reached the shared `dev` branch, you may correct the migration file and re-apply it manually (drop the affected objects in the SQL Editor first if needed). Keep the migration history linear before opening a PR.
+  - **Shared `dev` and production:** Never edit or delete an applied migration. Write a new compensating migration that corrects the issue (e.g., drop the bad column, rename the table back, restore the constraint). The compensating migration must have its own descriptive name (e.g., `018_fix_bad_column_from_017.sql`).
+  - Migration files in `supabase/migrations/` remain the source of truth — every change applied via the SQL Editor must also exist as a numbered migration file in the repo so it can be replayed against staging/production.
 
 ### Multi-Tenancy
 - Every table that holds tenant data must have an `organization_id` column
@@ -254,7 +256,7 @@ Testing is not optional on a life-safety platform. Claude Code must write tests 
 - Tests live in a `__tests__` folder adjacent to the file they test, or in a `tests/e2e` folder for Playwright
 - A feature is not complete until its critical-path tests pass
 - Never delete or skip a test to make a build pass — fix the code or the test
-- **Data seeding:** A database seed script (`supabase/seed.sql`) must exist with sample organizations, members, and incidents for local development. Seed data must never contain real PII. The seed script is not run in staging or production.
+- **Data seeding:** A database seed script (`supabase/seed.sql`) must exist with sample organizations, members, and incidents for the development Supabase project. The script is run manually via the Supabase Cloud SQL Editor against the dev project only — never against staging or production. Seed data must never contain real PII.
 
 ---
 
@@ -396,14 +398,14 @@ WCAG 2.1 AA compliance is required. This is a federal procurement requirement on
 
 ## 19. Environment-Specific Rules
 
-Three environments exist: **local development**, **staging** (Vercel preview deployments from `dev`), and **production** (Vercel production from `main`).
+Three environments exist: **local development** (Next.js dev server pointed at the dev Supabase Cloud project), **staging** (Vercel preview deployments from `dev`), and **production** (Vercel production from `main`). There is no local Supabase / Docker stack — all environments use Supabase Cloud projects, only the project URL and keys differ.
 
 ### What Differs by Environment
-- **Email confirmation:** Disabled in local dev (Supabase free-tier SMTP). Enabled in staging and production via Resend.
+- **Email confirmation:** Disabled in local dev (Supabase Cloud dev project setting). Enabled in staging and production via Resend.
 - **Sentry:** Disabled in local dev unless `SENTRY_FORCE_ENABLED=true`. Enabled in staging and production.
 - **Stripe:** Test mode in local dev and staging. Live mode in production only.
 - **Rate limiting:** Relaxed or disabled in local dev for faster iteration. Enforced in staging and production.
-- **Seed data:** `supabase/seed.sql` runs in local dev only. Never in staging or production.
+- **Seed data:** `supabase/seed.sql` is applied via the Supabase Cloud SQL Editor against the dev project only. Never run against staging or production.
 
 ### Dev-Only Utilities
 - **Dev-only routes, pages, and API endpoints are prohibited.** No `/api/dev/*`, no `/dev/*` pages. If a development shortcut is needed, implement it as a local script (`scripts/`) or a Supabase seed — never as a deployed route. A dev-only route that reaches production is a security incident.
@@ -472,4 +474,51 @@ Three environments exist: **local development**, **staging** (Vercel preview dep
 
 ---
 
-*Last updated: 2026-04-03 — Missing decisions session (Section 4 API Design expanded with pagination, error codes, timezone convention; Section 8 expanded with session expiry details and PHI access mechanism)*
+## 22. Internationalization Readiness
+
+The platform is architected for US-first launch, but every decision must keep the international path open. International expansion is a Year 2+ goal — do not build i18n infrastructure at MVP, but do not close doors.
+
+### Incident Management Data vs. Framework Presentation
+
+This is a non-negotiable architectural rule:
+
+- **The database stores incident management concepts, not ICS form numbers.** Tables like `incident_command_structure`, `operational_periods`, `incident_sectors`, and `incident_personnel` represent universal SAR concepts (who is in charge, what areas are being searched, who is deployed). These concepts exist in ICS, AIIMS, CIMS, and every other framework — the terminology differs, the data does not.
+- **ICS form rendering is a presentation layer concern.** The `ics_forms` table stores structured `form_data` as JSONB. At MVP, the only renderer is ICS (US). Post-MVP, the same underlying data can be rendered as AIIMS templates (Australia), CIMS Action Plans (New Zealand), or custom agency forms — without changing the data model.
+- **Display terminology must be configurable per organization.** The database uses ICS-derived column names (`incident_commander`, `operations_section_chief`, etc.) — this is fine and will not change. The **display labels** shown in the UI must be sourced from a terminology map, not hardcoded. At MVP, the terminology map is a static ICS-English map. Post-MVP, organizations select a framework (ICS, AIIMS, CIMS) which loads the appropriate terminology map (e.g., "Incident Commander" → "Incident Controller" for AIIMS/CIMS).
+- **Do not hardcode ICS form type names in business logic.** The `form_type` CHECK constraint on `ics_forms` uses ICS identifiers (`ICS_201`, `ICS_204`, etc.). Business logic should reference these via constants, not string literals, so that adding non-ICS form types is a registry change, not a codebase-wide find-and-replace.
+
+### International Framework Priority
+
+When international framework support is built, the priority order is:
+
+1. **Tier 1 (high ICS compatibility, English-speaking):** Canada (already ICS — zero adaptation), Australia (AIIMS — terminology mapping + form templates), New Zealand (CIMS — terminology mapping + form templates)
+2. **Tier 2 (moderate compatibility):** UK mountain rescue (Gold-Silver-Bronze + JESIP), ICAR member organizations (international alpine rescue)
+3. **Tier 3 (significant localization):** Continental Europe (FwDV 100, ORSEC), Scandinavia, APAC — these require framework-specific command structures, not just form template swaps
+
+### Language & Localization
+
+- **i18n is deferred to post-MVP.** UI strings are hardcoded in English. When i18n is introduced, use ICU MessageFormat via `next-intl`.
+- **Do not prematurely abstract strings** — the cost of retrofitting is lower than the cost of maintaining an i18n layer before it's needed.
+- **Units:** Metric/imperial conversion is already supported for subject height/weight. When entering international markets, all measurement displays must respect the org's locale preference (metric default for non-US).
+- **Date/time:** The existing timezone convention (IANA identifiers, `Intl.DateTimeFormat`) is already internationally compatible. No changes needed.
+- **Currency:** Stripe supports multi-currency billing. When international pricing is introduced, pricing tiers may differ by region. No architecture changes needed — Stripe handles currency natively.
+
+### International Compliance
+
+When entering non-US markets, the following compliance requirements apply. These are **not** MVP concerns but must not be architecturally blocked:
+
+- **GDPR (EU/EEA):** Requires explicit consent for data processing, data portability (export), right to erasure (with existing legal basis exceptions for SAR accountability records), Data Processing Agreements with all sub-processors (Supabase, Vercel, Stripe, Sentry, Twilio, Resend), and a designated Data Protection Officer at scale. The existing `deleted_at` + pseudonymization pattern for account deletion is GDPR-compatible.
+- **PIPEDA (Canada):** Similar to GDPR but with different consent thresholds. Canada is the most natural first international market — ICS-compatible, English-speaking, similar SAR culture.
+- **Data residency:** Some jurisdictions require user data to stay in-country or in-region. The current single-region Supabase deployment (US West) must eventually support multi-region isolation. Do not create architecture that assumes a single database instance.
+- **Privacy policy:** Must be updated per market to reflect local data protection law requirements. The existing GDPR Art 17(3)(e) carve-out for SAR accountability records applies in all jurisdictions with similar legal basis provisions.
+
+### What This Means for MVP Code
+
+- Use constants for ICS role names and form types — never string literals scattered through the codebase
+- UI labels for roles and form names should come from a centralized map (even if that map is static ICS-English at MVP)
+- Do not bake US-specific assumptions into business logic (e.g., don't assume imperial units, don't assume US phone number format for all users)
+- The `organizations.country` column already exists (default `'US'`) — this is sufficient for MVP
+
+---
+
+*Last updated: 2026-04-04 — Added Section 22 (Internationalization Readiness), updated Section 1 compliance roadmap with international milestones*

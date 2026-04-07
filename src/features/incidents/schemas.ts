@@ -40,6 +40,7 @@ export const PERSONNEL_STATUSES = [
   'resting',
   'injured',
   'stood_down',
+  'missing',
 ] as const
 export type PersonnelStatus = (typeof PERSONNEL_STATUSES)[number]
 
@@ -50,6 +51,7 @@ export const PERSONNEL_STATUS_LABELS: Record<PersonnelStatus, string> = {
   resting: 'Resting',
   injured: 'Injured',
   stood_down: 'Stood Down',
+  missing: 'Missing',
 }
 
 export const INCIDENT_ROLES = [
@@ -96,22 +98,22 @@ export type CreateIncidentInput = z.infer<typeof CreateIncidentSchema>
 export type CreateIncidentFormInput = z.input<typeof CreateIncidentSchema>
 
 // ─── Check In Personnel ───────────────────────────────────────────────────────
+// Check-in always creates the personnel record as `field_member`. Command roles
+// are assigned exclusively via the Command Structure panel so that the
+// `incident_command_structure` table remains the single source of truth.
 
 export const CheckInPersonnelSchema = z.object({
   memberId: z.string().uuid('Invalid member ID'),
-  incidentRole: z.enum(INCIDENT_ROLES).optional(),
 })
 
 export type CheckInPersonnelInput = z.infer<typeof CheckInPersonnelSchema>
 
 // ─── Update Personnel ────────────────────────────────────────────────────────
-// Covers status change, incident role assignment, and checkout.
-// At least one field must be meaningful — validated at the API layer.
+// Covers status change and checkout. Command roles are NOT editable here —
+// they flow exclusively through the Command Structure panel.
 
 export const UpdatePersonnelSchema = z.object({
   status: z.enum(PERSONNEL_STATUSES).optional(),
-  // null clears the role; a value sets it
-  incidentRole: z.enum(INCIDENT_ROLES).nullable().optional(),
   // When true, the server sets checked_out_at = now()
   checkout: z.boolean().optional(),
 })
@@ -184,3 +186,196 @@ export const QrVolunteerCheckInSchema = z.object({
 
 export type QrVolunteerCheckInInput = z.infer<typeof QrVolunteerCheckInSchema>
 export type QrVolunteerCheckInFormInput = z.input<typeof QrVolunteerCheckInSchema>
+
+// ─── Log Entry ──────────────────────────────────────────────────────────────
+
+export const LOG_ENTRY_TYPES = [
+  'narrative',
+  'personnel_checkin',
+  'personnel_checkout',
+  'personnel_status_change',
+  'resource_deployed',
+  'resource_returned',
+  'sector_assigned',
+  'sector_status_change',
+  'subject_update',
+  'par_initiated',
+  'par_completed',
+  'role_assigned',
+  'incident_status_change',
+  'form_exported',
+  'flight_path_added',
+  'system',
+] as const
+export type LogEntryType = (typeof LOG_ENTRY_TYPES)[number]
+
+export const LOG_ENTRY_TYPE_LABELS: Record<LogEntryType, string> = {
+  narrative: 'Narrative',
+  personnel_checkin: 'Check In',
+  personnel_checkout: 'Check Out',
+  personnel_status_change: 'Status Change',
+  resource_deployed: 'Resource Deployed',
+  resource_returned: 'Resource Returned',
+  sector_assigned: 'Sector Assigned',
+  sector_status_change: 'Sector Status',
+  subject_update: 'Subject Update',
+  par_initiated: 'PAR Initiated',
+  par_completed: 'PAR Completed',
+  role_assigned: 'Role Assigned',
+  incident_status_change: 'Status Change',
+  form_exported: 'Form Exported',
+  flight_path_added: 'Flight Path',
+  system: 'System',
+}
+
+export const AddLogEntrySchema = z.object({
+  message: z.string().trim().min(1, 'Entry cannot be empty').max(2000),
+})
+
+export type AddLogEntryInput = z.infer<typeof AddLogEntrySchema>
+export type AddLogEntryFormInput = z.input<typeof AddLogEntrySchema>
+
+// ─── Update Incident Status ─────────────────────────────────────────────────
+
+export const UpdateIncidentStatusSchema = z.object({
+  status: z.enum(['active', 'suspended', 'closed']),
+  afterActionNotes: z.string().trim().max(5000).optional(),
+})
+
+export type UpdateIncidentStatusInput = z.infer<typeof UpdateIncidentStatusSchema>
+
+// ─── Incident Status Labels ─────────────────────────────────────────────────
+
+export const INCIDENT_STATUS_LABELS: Record<IncidentStatus, string> = {
+  planning: 'Planning',
+  active: 'Active',
+  suspended: 'Suspended',
+  closed: 'Closed',
+}
+
+// ─── Subject Types ──────────────────────────────────────────────────────────
+
+export const SUBJECT_TYPES = [
+  'hiker', 'hunter', 'child', 'dementia_patient',
+  'despondent', 'climber', 'skier', 'other',
+] as const
+export type SubjectType = (typeof SUBJECT_TYPES)[number]
+
+export const SUBJECT_TYPE_LABELS: Record<SubjectType, string> = {
+  hiker: 'Hiker',
+  hunter: 'Hunter',
+  child: 'Child',
+  dementia_patient: 'Dementia Patient',
+  despondent: 'Despondent',
+  climber: 'Climber',
+  skier: 'Skier',
+  other: 'Other',
+}
+
+export const SUBJECT_GENDERS = ['male', 'female', 'nonbinary', 'unknown'] as const
+export type SubjectGender = (typeof SUBJECT_GENDERS)[number]
+
+export const SUBJECT_GENDER_LABELS: Record<SubjectGender, string> = {
+  male: 'Male',
+  female: 'Female',
+  nonbinary: 'Non-binary',
+  unknown: 'Unknown',
+}
+
+export const FOUND_CONDITIONS = [
+  'alive_uninjured', 'alive_injured', 'deceased', 'not_found',
+] as const
+export type FoundCondition = (typeof FOUND_CONDITIONS)[number]
+
+export const FOUND_CONDITION_LABELS: Record<FoundCondition, string> = {
+  alive_uninjured: 'Alive — Uninjured',
+  alive_injured: 'Alive — Injured',
+  deceased: 'Deceased',
+  not_found: 'Not Found',
+}
+
+// ─── Create Subject ─────────────────────────────────────────────────────────
+
+export const CreateSubjectSchema = z.object({
+  firstName: z.string().trim().min(1, 'First name is required').max(100),
+  lastName: z.string().trim().min(1, 'Last name is required').max(100),
+  age: z.number().int().min(0).max(150).optional(),
+  gender: z.enum(SUBJECT_GENDERS).optional(),
+  heightCm: z.number().int().min(30).max(300).optional(),
+  weightKg: z.number().min(1).max(500).optional(),
+  physicalDescription: z.string().trim().max(2000).optional(),
+  clothingDescription: z.string().trim().max(2000).optional(),
+  subjectType: z.enum(SUBJECT_TYPES).optional(),
+  lastSeenAt: z.string().datetime({ offset: true }).optional(),
+  isPrimary: z.boolean().optional(),
+})
+
+export type CreateSubjectInput = z.infer<typeof CreateSubjectSchema>
+export type CreateSubjectFormInput = z.input<typeof CreateSubjectSchema>
+
+// ─── Update Subject ─────────────────────────────────────────────────────────
+
+export const UpdateSubjectSchema = z.object({
+  firstName: z.string().trim().min(1).max(100).optional(),
+  lastName: z.string().trim().min(1).max(100).optional(),
+  age: z.number().int().min(0).max(150).nullable().optional(),
+  gender: z.enum(SUBJECT_GENDERS).nullable().optional(),
+  heightCm: z.number().int().min(30).max(300).nullable().optional(),
+  weightKg: z.number().min(1).max(500).nullable().optional(),
+  physicalDescription: z.string().trim().max(2000).nullable().optional(),
+  clothingDescription: z.string().trim().max(2000).nullable().optional(),
+  subjectType: z.enum(SUBJECT_TYPES).nullable().optional(),
+  lastSeenAt: z.string().datetime({ offset: true }).nullable().optional(),
+  isPrimary: z.boolean().optional(),
+  foundCondition: z.enum(FOUND_CONDITIONS).nullable().optional(),
+  foundAt: z.string().datetime({ offset: true }).nullable().optional(),
+})
+
+export type UpdateSubjectInput = z.infer<typeof UpdateSubjectSchema>
+export type UpdateSubjectFormInput = z.input<typeof UpdateSubjectSchema>
+
+// ─── Assign Command Role ────────────────────────────────────────────────────
+
+export const ASSIGNABLE_ICS_ROLES = [
+  'incident_commander', 'deputy_ic', 'safety_officer',
+  'public_information_officer', 'liaison_officer',
+  'operations_section_chief', 'planning_section_chief',
+  'logistics_section_chief', 'finance_section_chief',
+  'medical_officer', 'observer',
+] as const
+export type AssignableIcsRole = (typeof ASSIGNABLE_ICS_ROLES)[number]
+
+export const AssignRoleSchema = z.object({
+  memberId: z.string().uuid('Invalid member ID'),
+  icsRole: z.enum(ASSIGNABLE_ICS_ROLES),
+})
+
+export type AssignRoleInput = z.infer<typeof AssignRoleSchema>
+
+// ─── IC Hand-Off ────────────────────────────────────────────────────────────
+
+export const OUTGOING_IC_ROLES = ['field_member', 'observer', 'stood_down'] as const
+export type OutgoingIcRole = (typeof OUTGOING_IC_ROLES)[number]
+
+export const HandOffIcSchema = z.object({
+  newIcMemberId: z.string().uuid('Invalid member ID'),
+  outgoingIcNewRole: z.enum(OUTGOING_IC_ROLES),
+})
+
+export type HandOffIcInput = z.infer<typeof HandOffIcSchema>
+
+// ─── Operational Period ─────────────────────────────────────────────────────
+
+export const StartNewPeriodSchema = z.object({
+  objectives: z.string().trim().max(5000).optional(),
+  weatherSummary: z.string().trim().max(2000).optional(),
+})
+
+export type StartNewPeriodInput = z.infer<typeof StartNewPeriodSchema>
+
+export const UpdatePeriodSchema = z.object({
+  objectives: z.string().trim().max(5000).optional(),
+  weatherSummary: z.string().trim().max(2000).optional(),
+})
+
+export type UpdatePeriodInput = z.infer<typeof UpdatePeriodSchema>

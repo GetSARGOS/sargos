@@ -85,7 +85,7 @@ export async function checkInPersonnel(
       personnel_type: 'member',
       checkin_method: 'manual',
       status: 'available',
-      incident_role: input.incidentRole ?? 'field_member',
+      incident_role: 'field_member',
     })
     .select('id')
     .single()

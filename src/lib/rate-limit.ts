@@ -46,7 +46,8 @@ const singletons: {
   public: Ratelimit | null | undefined
   authenticated: Ratelimit | null | undefined
   expensive: Ratelimit | null | undefined
-} = { redis: undefined, public: undefined, authenticated: undefined, expensive: undefined }
+  forgotPassword: Ratelimit | null | undefined
+} = { redis: undefined, public: undefined, authenticated: undefined, expensive: undefined, forgotPassword: undefined }
 
 function getRedis(): Redis | null {
   if (singletons.redis === undefined) {
@@ -101,6 +102,13 @@ function getExpensiveLimiter(): Ratelimit | null {
     singletons.expensive = createLimiter('expensive', 20, '1 m')
   }
   return singletons.expensive
+}
+
+function getForgotPasswordLimiter(): Ratelimit | null {
+  if (singletons.forgotPassword === undefined) {
+    singletons.forgotPassword = createLimiter('forgot-password', 3, '1 h')
+  }
+  return singletons.forgotPassword
 }
 
 // ─── Rate Limit Check Functions ─────────────────────────────────────────────
@@ -160,6 +168,24 @@ export async function checkExpensiveRateLimit(
 }
 
 /**
+ * Check rate limit for forgot-password requests (per email address).
+ * 3 requests per hour.
+ */
+export async function checkForgotPasswordRateLimit(
+  email: string,
+): Promise<RateLimitResult> {
+  const limiter = getForgotPasswordLimiter()
+  if (!limiter) return PASS_THROUGH
+  const result = await limiter.limit(email.toLowerCase())
+  return {
+    success: result.success,
+    limit: result.limit,
+    remaining: result.remaining,
+    reset: result.reset,
+  }
+}
+
+/**
  * Build a 429 Too Many Requests response with standard shape and Retry-After header.
  */
 export function rateLimitExceededResponse(reset: number): NextResponse {
@@ -202,4 +228,5 @@ export function _resetForTesting(): void {
   singletons.public = undefined
   singletons.authenticated = undefined
   singletons.expensive = undefined
+  singletons.forgotPassword = undefined
 }

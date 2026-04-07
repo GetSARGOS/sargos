@@ -15,7 +15,7 @@ The goal of the MVP is one complete, trustworthy incident workflow. An IC must b
 Features have cross-cutting dependencies that constrain build order. This map captures those constraints.
 
 ```
-Feature 8a (Enforcement Infra) ─── no dependencies; build first or alongside Feature 3
+Feature 8a (Enforcement Infra) ─── no dependencies; build before Feature 3
   │
 Feature 3 (Incident Lifecycle) ─── depends on 8a (tier checks on incident creation)
   │   delivers: command structure, subjects, log entries, op periods, closure flow
@@ -28,18 +28,28 @@ Feature 3 (Incident Lifecycle) ─── depends on 8a (tier checks on incident 
         requires: command structure, subjects, log, op periods (F3) + sectors (F4)
         delivers: multi-period form generation scoped to op period boundaries
 
-Feature 8b (Stripe + Billing UI) ─── build last; all gated features already call checkTierAccess()
+Feature 7 (Notifications) ─── depends on Feature 3 (incident events to notify on)
+Feature 9 LITE (Branding) ─── no dependencies
+Feature 8b (Stripe + Billing UI + Referral) ─── build last; all gated features already call checkTierAccess()
 ```
 
-**Recommended build order for remaining MVP features:**
+#### Locked Build Order (Non-Negotiable)
 
-1. **Feature 8a** — Enforcement infrastructure (small; enables tier gating in everything after)
-2. **Feature 3** — Incident Lifecycle (largest feature; unblocks Features 4 and 5)
-3. **Feature 4** — Search Mapping (unblocks Feature 5's ICS 204 sector data)
-4. **Feature 5** — ICS Forms (all prerequisites met)
-5. **Feature 8b** — Stripe integration + billing UI (last — everything is already gated)
+This is the concrete, sequential build order for all remaining MVP features. Every session must follow this order. Do not skip ahead or reorder.
 
-Features 1, 2, 2b, 6, 7, 9 have no ordering constraints from these dependencies (1/2/2b/6 already built; 7/9 are independent).
+| Step | Feature | What It Delivers | Depends On |
+|------|---------|-----------------|------------|
+| **0** | **Housekeeping** | Apply `withRetry` to critical Supabase mutations. Validate seed script by re-running it against the dev Supabase project via the SQL Editor. | Nothing — standalone cleanup. |
+| **1** | **Feature 6 completion** | Password reset flow (`/forgot-password`, `/reset-password`). Zod schemas, rate limiting, Resend email. | Nothing — standalone. |
+| **2** | **Feature 8a** | `checkTierAccess()` utility, `SubscriptionContext` provider, tier constants, API enforcement helper. Retrofit into existing routes (Features 1, 2, 2b). | Nothing — standalone. |
+| **3** | **Feature 3** | Incident lifecycle: creation, tabbed board, command structure, subjects, incident log, operational periods, hand-off, suspension, closure (with QR deactivation + personnel auto-checkout). | Step 2 (tier check on incident creation). |
+| **4** | **Feature 4** | Search mapping: Mapbox map, sector drawing/assignment, waypoints, tracks, KML/GPX import, drone/aircraft flight paths, offline tile caching. Personnel board gains sector assignment display. | Step 3 (needs incidents with LKP/IPP). |
+| **5** | **Feature 5** | ICS form auto-fill + PDF export: ICS 201, 204, 206, 209, 211. Review-and-edit UI, versioning per op period. | Steps 3 + 4 (needs command structure, subjects, log, sectors). |
+| **6** | **Feature 7** | Notifications: push (Expo), SMS (Twilio), in-app. Incident callout, assignment changes, PAR request, overdue alerts. User notification preferences. | Step 3 (incident events to notify on). |
+| **7** | **Feature 9 LITE** | Dark mode toggle, application font, forest green accent, org color customization. | Nothing — standalone. |
+| **8** | **Feature 8b** | Stripe subscription management, billing UI, Stripe Customer Portal, webhook handlers, seat count enforcement, subscription lapse behavior. Community Referral Program infrastructure (built but not activated). | All above (everything calls `checkTierAccess()`). |
+
+**Already completed:** Features 1, 2, 2b, Feature 6 (partial — auth infrastructure, signup, login, sessions, RBAC). Foundation, security hardening, reliability, pre-Feature-3 infrastructure.
 
 **Cross-cutting notes:**
 - Feature 2 personnel board gains sector assignment display (read-only) after Feature 4 ships
@@ -269,6 +279,9 @@ At MVP, the five most critical forms are supported. Data captured in features 1�
 - Exported PDFs are saved to incident record in Supabase Storage
 - Forms are printable for teams that need paper copies in the field
 
+#### International Framework Note
+> ICS forms are a US/Canadian standard. Australia (AIIMS), New Zealand (CIMS), and UK (JESIP) use different form systems. The form architecture must support pluggable "framework packs" post-MVP — see `claude-rules.md` Section 22. At MVP, ICS is the only renderer. The underlying incident data model is framework-agnostic by design; ICS form rendering is a presentation layer concern. When international framework support is added (see Feature 23), the same `form_data` JSONB can be rendered into AIIMS templates, CIMS Action Plans, or custom agency forms without changing the data model.
+
 ---
 
 ### 6. Authentication & Access Control [FULL]
@@ -402,6 +415,53 @@ Per-seat pricing with configurable seat count. Walk-up volunteers (QR check-in) 
 - Enterprise customers managed outside Stripe via direct invoicing
 - Annual billing encouraged (lower Stripe fees: ~2.95% vs ~3.8% monthly). Consider offering 2 months free on annual plans.
 
+#### Community Referral Program
+
+**Why:** SAR is a tight-knit, word-of-mouth-driven community. Recommendations happen verbally — at trainings, conferences, mutual aid events, and over radio. A well-designed referral program turns satisfied teams into advocates. D4H has no referral program — this is an untapped opportunity.
+
+**Framing:** Do not call it a "referral program" (too transactional for a mission-driven community). Frame as **"Community Network"** or **"Team Connect"** — emphasizing community support over sales commissions.
+
+**Reward Structure: Two-Sided Account Credit**
+- **Referrer org** receives **$50 credit** applied to their next invoice when the referred org converts to a paid plan
+- **Referred org** receives **$50 credit** applied after their first paid invoice
+- Credits use **Stripe customer balance credits** (not coupons — coupons can't stack, credits can)
+- Credits do not expire once applied to the customer balance
+- No cash payouts — account credits only (avoids 1099 tax reporting obligations)
+
+**Tiered Milestone Rewards (Community Champions)**
+In a tight community, one person may influence 5-10+ teams. Flat rewards cap their motivation.
+- **1 successful referral:** $50 credit (base reward)
+- **3 successful referrals:** $100 credit + "Community Champion" badge on org profile
+- **5 successful referrals:** 1 month free (value of org's current plan)
+- **10 successful referrals:** Permanent 10% discount on subscription
+
+Non-monetary recognition (badge, acknowledgment on a "Community Champions" page) can be more motivating than dollar amounts in mission-driven communities.
+
+**Sharing Mechanism: Referral Codes (Primary) + Links (Secondary)**
+- Each org gets a **verbal-friendly referral code** based on their team name (e.g., `MESA-SAR`, `KCSAR`, `YOSAR`). This is the primary sharing mechanism because SAR recommendations happen in conversation, not via clickable links.
+- Each org also gets a **unique referral link** (`app.sargos.com/r/[code]` or `app.sargos.com/join?ref=[code]`) for digital sharing.
+- Referral code can be entered during signup if the new org didn't use the link.
+- **90-day attribution window** — SAR teams have slow procurement cycles (board votes, county budget approvals). Standard B2B SaaS windows are 30-90 days; SAR procurement justifies the maximum.
+
+**Anti-Fraud & Rules**
+- Referred org must be a genuinely new organization (not a re-signup or alias)
+- Referrer and referred cannot share the same billing email or payment method
+- Self-referral detected and rejected
+- Referral converts only when the referred org completes their first paid invoice (not on signup alone)
+
+**Referral Dashboard (Org Admin view)**
+- Org Admins see their referral code and link on the Settings > Billing page
+- Status of each referral: Pending (signed up, not yet paid), Converted (first invoice paid, credit applied), Expired (90-day window passed without conversion)
+- Total credits earned and applied
+- Community Champion badge status and progress toward next milestone
+
+**Activation Strategy**
+- Infrastructure built alongside Feature 8b (Stripe integration) for engineering efficiency
+- **Do not activate until ~10-20 paying teams exist.** A referral program amplifies satisfaction — it cannot create it. Premature activation wastes the early evangelists.
+- When activated: announce via email to all paying orgs, highlight at SAR conferences and trainings
+
+**Database:** See `referrals` table in `database-schema.md`.
+
 ---
 
 ### 9. Organization Branding & Theme [LITE at MVP, FULL at Post-MVP]
@@ -510,6 +570,20 @@ K9 teams have documentation requirements that differ meaningfully from human res
 - K9 deployment data feeds into ICS 204 (Assignment List) and the incident map (alert locations as waypoints)
 - K9 history report exportable per dog for certification renewal documentation
 
+### 18. Internationalization & Localization (i18n)
+
+Expanding the platform beyond the US English-speaking market.
+
+> **Prerequisite research completed:** ICS is used natively in US and Canada. Australia (AIIMS) and New Zealand (CIMS) are derived from ICS with terminology differences. UK (JESIP/Gold-Silver-Bronze), Continental Europe (FwDV 100, ORSEC), and APAC use fundamentally different frameworks. See `claude-rules.md` Section 22 for architectural rules.
+
+- **UI localization** via `next-intl` with ICU MessageFormat — all hardcoded English strings extracted to locale files
+- **Supported locales (initial):** English (US), English (AU), English (NZ), English (UK), French (CA — bilingual requirement for Canadian federal teams)
+- **Terminology mapping per org framework:** organizations select their incident management framework (ICS, AIIMS, CIMS) during onboarding. The framework selection loads a terminology map that adjusts display labels throughout the UI (e.g., "Incident Commander" → "Incident Controller" for AIIMS/CIMS). Database column names remain ICS-derived — the mapping is display-only.
+- **Unit preferences per org:** metric (default for non-US) or imperial. Affects distance, altitude, speed, weight, and temperature display throughout the app and PDF exports.
+- **PDF form exports** respect the org's locale and terminology map
+- **Notification templates** (email, SMS, push) localized per org locale
+- **Date format:** already internationally compatible via `Intl.DateTimeFormat` with IANA timezone identifiers — no changes needed
+
 ---
 
 ## Tier 3 — Future / Year 2+ (Scaling to Federal & Global)
@@ -559,15 +633,46 @@ Features that support growth beyond volunteer teams into professional, state, an
 - On-premise deployment option for federal customers
 - SAML / SSO integration for government identity providers (CAC, PIV)
 
+### 23. International Framework Support
+
+Pluggable incident management framework packs that adapt the platform for non-ICS markets.
+
+> **Architecture note:** The data model is already framework-agnostic (see `claude-rules.md` Section 22). This feature adds framework-specific **presentation layers** — terminology maps, form renderers, and role label sets — without changing the underlying data model.
+
+#### Framework Packs (priority order)
+
+- **ICS (US/Canada)** — ships at MVP. No changes needed for Canada — they use identical ICS forms.
+- **AIIMS Pack (Australia):** Terminology mapping ("Incident Controller" instead of "Incident Commander", "Control" instead of "Command"). Australian-style Incident Action Plan templates. Agency-specific form templates. ~30,000+ SES/SAR volunteers addressable.
+- **CIMS Pack (New Zealand):** Terminology mapping (similar to AIIMS). CIMS Action Plan, Communications Plan, and Resource Request templates. CIMS Role Cards. ~4,000+ LandSAR/Coastguard NZ volunteers addressable.
+- **JESIP Pack (UK):** Gold-Silver-Bronze hierarchy mapping. M/ETHANE reporting integration. UK Mountain Rescue–specific documentation. ~3,500 mountain rescue volunteers addressable. **Note:** This requires more structural adaptation than AIIMS/CIMS due to fundamental differences in command philosophy.
+- **Custom Framework:** Org-configurable command hierarchy, role labels, and form templates for agencies that use proprietary or hybrid systems.
+
+#### Per-Pack Deliverables
+- Terminology map (JSON) loaded per org setting — swaps all role labels, status labels, and form titles in the UI
+- Form template set — PDF renderers for the framework's standard documentation (replaces ICS form renderers)
+- Onboarding flow adaptation — framework-appropriate role names and setup prompts
+- Help documentation localized to the framework's terminology
+
+### 24. International Data Residency & Compliance
+
+Supporting multi-region deployment for data residency requirements.
+
+- **Multi-region Supabase deployment:** EU, Canada, Australia/NZ regions for data residency compliance
+- **Per-org data region selection** at onboarding — cannot be changed after creation (data migration path TBD)
+- **GDPR compliance (EU/EEA):** Consent management, data portability export, right to erasure (with SAR accountability record exceptions), Data Processing Agreements with all sub-processors, Data Protection Officer designation
+- **PIPEDA compliance (Canada):** Consent and access request handling per PIPEDA requirements. Canada is the natural first international market — ICS-compatible, English-speaking, similar SAR culture.
+- **Privacy policy per region:** Localized privacy policies reflecting local data protection law
+- **Sub-processor documentation:** Maintained list of all data sub-processors (Supabase, Vercel, Stripe, Sentry, Twilio, Resend) with their data processing locations and DPA status
+
 ---
 
 ## Feature Count Summary
 
 | Tier | Features | Target Timeline |
 |---|---|---|
-| MVP | 10 core feature groups (8 split into 8a + 8b) | Month 0–3 |
-| Post-MVP | 9 expansion features | Month 3–12 |
-| Future | 6 platform features | Year 2–5 |
+| MVP | 10 core feature groups (8 split into 8a + 8b, 8b includes Community Referral Program) | Month 0–3 |
+| Post-MVP | 10 expansion features (includes i18n) | Month 3–12 |
+| Future | 8 platform features (includes international framework packs + data residency) | Year 2–5 |
 
 ---
 

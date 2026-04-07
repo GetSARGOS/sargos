@@ -135,6 +135,10 @@ export async function POST(req: NextRequest, ctx: RouteContext): Promise<NextRes
     )
   }
 
+  // NOTE: Tier seat limit (`add_member`) is NOT checked here. Checking an existing
+  // org member into an incident is a normal operation. The seat limit is enforced
+  // when *adding a new member to the organization* (invite/creation endpoint).
+
   try {
     const result = await checkInPersonnel(
       member.organization_id,

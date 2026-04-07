@@ -1,4 +1,5 @@
 import { createServiceClient } from '@/lib/supabase/service'
+import { withRetry } from '@/lib/retry'
 import type { CreateIncidentInput } from '@/features/incidents/schemas'
 import type { RequestMeta } from '@/lib/request-meta'
 
@@ -47,57 +48,78 @@ export async function createIncident(
     throw new CreateIncidentError('MEMBER_NOT_FOUND', 'Creator is not an active member of this organization')
   }
 
-  // Insert the incident
-  const { data: incident, error: incidentError } = await supabase
-    .from('incidents')
-    .insert({
-      organization_id: organizationId,
-      name: input.name,
-      incident_type: input.incidentType,
-      status: 'active',
-      location_address: input.locationAddress ?? null,
-      started_at: input.startedAt ?? new Date().toISOString(),
-    })
-    .select('id')
-    .single()
-
-  if (incidentError || !incident) {
-    console.error('[createIncident] incident insert failed:', incidentError?.code)
+  // Insert the incident (critical — retry on transient network failure)
+  const incident = await withRetry(async () => {
+    const { data, error } = await supabase
+      .from('incidents')
+      .insert({
+        organization_id: organizationId,
+        name: input.name,
+        incident_type: input.incidentType,
+        status: 'active',
+        location_address: input.locationAddress ?? null,
+        started_at: input.startedAt ?? new Date().toISOString(),
+        timezone: 'America/Los_Angeles',
+        current_operational_period: 1,
+      })
+      .select('id')
+      .single()
+    if (error) throw error
+    return data
+  }).catch(() => {
     throw new CreateIncidentError('CREATE_FAILED', 'Failed to create incident')
-  }
+  })
 
   const incidentId = incident.id
 
-  // Insert the IC into command structure
-  const { error: commandError } = await supabase
-    .from('incident_command_structure')
-    .insert({
-      incident_id: incidentId,
-      organization_id: organizationId,
-      member_id: member.id,
-      ics_role: 'incident_commander',
+  // Insert the IC into command structure (retry — important for incident integrity)
+  try {
+    await withRetry(async () => {
+      const { error } = await supabase
+        .from('incident_command_structure')
+        .insert({
+          incident_id: incidentId,
+          organization_id: organizationId,
+          member_id: member.id,
+          ics_role: 'incident_commander',
+        })
+      if (error) throw error
     })
-
-  if (commandError) {
-    // Best effort — log but don't fail incident creation
-    console.error('[createIncident] command structure insert failed:', commandError.code)
+  } catch (err) {
+    console.error('[createIncident] command structure insert failed:', err)
   }
 
-  // Check in the creator as IC on the incident_personnel board
-  const { error: personnelError } = await supabase
-    .from('incident_personnel')
-    .insert({
+  // Check in the creator as IC on the incident_personnel board (retry — important for incident integrity)
+  try {
+    await withRetry(async () => {
+      const { error } = await supabase
+        .from('incident_personnel')
+        .insert({
+          incident_id: incidentId,
+          organization_id: organizationId,
+          member_id: member.id,
+          personnel_type: 'member',
+          checkin_method: 'app',
+          status: 'available',
+          incident_role: 'incident_commander',
+        })
+      if (error) throw error
+    })
+  } catch (err) {
+    console.error('[createIncident] personnel insert failed:', err)
+  }
+
+  // Create the first operational period (best-effort — does not block incident creation)
+  try {
+    await supabase.from('operational_periods').insert({
       incident_id: incidentId,
       organization_id: organizationId,
-      member_id: member.id,
-      personnel_type: 'member',
-      checkin_method: 'app',
-      status: 'available',
-      incident_role: 'incident_commander',
+      period_number: 1,
+      starts_at: input.startedAt ?? new Date().toISOString(),
+      created_by: member.id,
     })
-
-  if (personnelError) {
-    console.error('[createIncident] personnel insert failed:', personnelError.code)
+  } catch (err) {
+    console.error('[createIncident] operational period insert failed:', err)
   }
 
   // Append incident_log entry

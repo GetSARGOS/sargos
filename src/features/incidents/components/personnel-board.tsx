@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client'
 import {
   PERSONNEL_STATUSES,
   PERSONNEL_STATUS_LABELS,
-  INCIDENT_ROLES,
   INCIDENT_ROLE_LABELS,
   type PersonnelStatus,
   type IncidentRole,
@@ -56,6 +55,7 @@ const STATUS_STYLES: Record<PersonnelStatus, string> = {
   resting: 'bg-yellow-100 text-yellow-800',
   injured: 'bg-red-100 text-red-800',
   stood_down: 'bg-muted text-muted-foreground',
+  missing: 'bg-red-200 text-red-900',
 }
 
 // ─── Check In Form ────────────────────────────────────────────────────────────
@@ -70,7 +70,6 @@ interface CheckInFormProps {
 
 function CheckInForm({ incidentId, orgMembers, alreadyCheckedInIds, onCheckedIn, onCancel }: CheckInFormProps) {
   const [memberId, setMemberId] = useState('')
-  const [incidentRole, setIncidentRole] = useState<IncidentRole | ''>('')
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -83,10 +82,7 @@ function CheckInForm({ incidentId, orgMembers, alreadyCheckedInIds, onCheckedIn,
     e.preventDefault()
     setError(null)
 
-    const parsed = CheckInPersonnelSchema.safeParse({
-      memberId,
-      incidentRole: incidentRole || undefined,
-    })
+    const parsed = CheckInPersonnelSchema.safeParse({ memberId })
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Invalid input')
       return
@@ -128,24 +124,6 @@ function CheckInForm({ incidentId, orgMembers, alreadyCheckedInIds, onCheckedIn,
           {availableMembers.map((m) => (
             <option key={m.id} value={m.id}>
               {m.display_name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="check-in-role" className="sr-only">
-          Incident role (optional)
-        </label>
-        <select
-          id="check-in-role"
-          value={incidentRole}
-          onChange={(e) => setIncidentRole(e.target.value as IncidentRole | '')}
-          className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-        >
-          <option value="">No role</option>
-          {INCIDENT_ROLES.map((r) => (
-            <option key={r} value={r}>
-              {INCIDENT_ROLE_LABELS[r]}
             </option>
           ))}
         </select>
@@ -216,60 +194,6 @@ function StatusSelect({ personnelId, incidentId, currentStatus, onStatusChange, 
       {PERSONNEL_STATUSES.map((s) => (
         <option key={s} value={s} className="bg-background text-foreground">
           {PERSONNEL_STATUS_LABELS[s]}
-        </option>
-      ))}
-    </select>
-  )
-}
-
-// ─── Role Select ──────────────────────────────────────────────────────────────
-
-interface RoleSelectProps {
-  personnelId: string
-  incidentId: string
-  currentRole: IncidentRole | null
-  onRoleChange: (personnelId: string, role: IncidentRole | null) => void
-  onRollback: (personnelId: string, role: IncidentRole | null) => void
-}
-
-function RoleSelect({ personnelId, incidentId, currentRole, onRoleChange, onRollback }: RoleSelectProps) {
-  const [isPending, startTransition] = useTransition()
-
-  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const newRole = (e.target.value || null) as IncidentRole | null
-    const previousRole = currentRole
-
-    // Optimistic update
-    onRoleChange(personnelId, newRole)
-
-    startTransition(async () => {
-      try {
-        const res = await fetch(`/api/incidents/${incidentId}/personnel/${personnelId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ incidentRole: newRole }),
-        })
-        if (!res.ok) {
-          onRollback(personnelId, previousRole)
-        }
-      } catch {
-        onRollback(personnelId, previousRole)
-      }
-    })
-  }
-
-  return (
-    <select
-      value={currentRole ?? ''}
-      onChange={handleChange}
-      disabled={isPending}
-      aria-label="Incident role"
-      className="rounded-md border-0 bg-transparent px-0 py-0.5 text-xs text-muted-foreground cursor-pointer hover:text-foreground focus:outline-none disabled:opacity-70"
-    >
-      <option value="">No role</option>
-      {INCIDENT_ROLES.map((r) => (
-        <option key={r} value={r} className="bg-background text-foreground">
-          {INCIDENT_ROLE_LABELS[r]}
         </option>
       ))}
     </select>
@@ -498,19 +422,6 @@ export function PersonnelBoard({ incidentId, orgId: _orgId, initialPersonnel, in
     )
   }
 
-  // ── Optimistic role update ─────────────────────────────────────────────────
-  function handleRoleChange(personnelId: string, newRole: IncidentRole | null) {
-    setPersonnel((prev) =>
-      prev.map((p) => (p.id === personnelId ? { ...p, incident_role: newRole } : p)),
-    )
-  }
-
-  function handleRoleRollback(personnelId: string, previousRole: IncidentRole | null) {
-    setPersonnel((prev) =>
-      prev.map((p) => (p.id === personnelId ? { ...p, incident_role: previousRole } : p)),
-    )
-  }
-
   // ── Check out ─────────────────────────────────────────────────────────────
   function handleCheckOut(personnelId: string) {
     setPersonnel((prev) =>
@@ -598,13 +509,9 @@ export function PersonnelBoard({ incidentId, orgId: _orgId, initialPersonnel, in
                     {p.personnel_type === 'volunteer' ? (
                       <span className="text-xs text-muted-foreground">Unaffiliated</span>
                     ) : (
-                      <RoleSelect
-                        personnelId={p.id}
-                        incidentId={incidentId}
-                        currentRole={p.incident_role}
-                        onRoleChange={handleRoleChange}
-                        onRollback={handleRoleRollback}
-                      />
+                      <span className="text-xs text-muted-foreground">
+                        {p.incident_role ? INCIDENT_ROLE_LABELS[p.incident_role] : '—'}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3">

@@ -42,37 +42,37 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 // ---------------------------------------------------------------------------
 const SEED_USERS = [
   {
-    id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     email: 'admin@alphasar.test',
     password: 'TestPassword1!',
     display_name: 'Alice Admin',
   },
   {
-    id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
     email: 'ic@alphasar.test',
     password: 'TestPassword1!',
     display_name: 'Bob Commander',
   },
   {
-    id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+    id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     email: 'ops@alphasar.test',
     password: 'TestPassword1!',
     display_name: 'Carol Ops',
   },
   {
-    id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
+    id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
     email: 'field@alphasar.test',
     password: 'TestPassword1!',
     display_name: 'Dave Field',
   },
   {
-    id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+    id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
     email: 'observer@alphasar.test',
     password: 'TestPassword1!',
     display_name: 'Eve Observer',
   },
   {
-    id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
+    id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
     email: 'admin@betasar.test',
     password: 'TestPassword1!',
     display_name: 'Frank Beta',
@@ -84,7 +84,7 @@ async function main() {
 
   // Step 1: Delete existing seed users (safe if they don't exist)
   const { data: allUsers } = await supabase.auth.admin.listUsers();
-  const seedEmails = new Set(SEED_USERS.map((u) => u.email));
+  const seedEmails: Set<string> = new Set(SEED_USERS.map((u) => u.email));
 
   for (const existing of allUsers?.users ?? []) {
     if (existing.email && seedEmails.has(existing.email)) {

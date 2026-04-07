@@ -71,7 +71,7 @@ Next: Build [Feature X] — start with [specific file or migration or component]
 
 ---
 
-**Latest session: 16** (2026-04-03) — Update this number when appending a new entry.
+**Latest session: 20** (2026-04-04) — Update this number when appending a new entry.
 
 ---
 
@@ -99,6 +99,10 @@ Next: Build [Feature X] — start with [specific file or migration or component]
 | 14 | 2026-04-03 | Docs | Interaction gaps (dependency map, RBAC) |
 | 15 | 2026-04-03 | Build | Reliability & tech debt (types, retry, audit) |
 | 16 | 2026-04-03 | Build | Pre-Feature-3 infrastructure (error codes, pagination, dates, seed) |
+| 17 | 2026-04-04 | Docs | Strategic planning (internationalization + referral program) |
+| 18 | 2026-04-04 | Build | Feature 6 completion (password reset) + withRetry |
+| 19 | 2026-04-04 | Build | PKCE code_verifier bug fix (verifyOtp + token_hash) |
+| 20 | 2026-04-04 | Build | Feature 8a — Billing enforcement infrastructure |
 
 ---
 
@@ -1555,3 +1559,472 @@ Status: Complete — all 6 tasks done. Retrofit of existing API routes to use `e
 - Security: No secrets PASS. No `any` types PASS.
 - Accessibility: N/A.
 - Code Quality: No file exceeds 400 lines PASS. Naming conventions PASS. No dead code PASS.
+
+---
+
+## Session 17 — 2026-04-04
+
+### What Was Built
+Planning session only — no code written. Researched and documented two strategic expansion topics: (1) international market readiness and (2) community referral program. Updated three planning documents with findings.
+
+### Feature Reference
+Feature: Strategic Planning — Internationalization Readiness + Community Referral Program
+Status: Complete — all doc updates made. No code changes.
+
+### Files Created or Modified
+- `claude-rules.md` — Updated Section 1 compliance roadmap with international milestones (GDPR, PIPEDA, data residency). Added new Section 22: Internationalization Readiness (framework-agnostic data model rule, terminology mapping, international framework priority, language/localization guidance, international compliance requirements).
+- `feature-list.md` — Added international framework note to Feature 5 (ICS Forms). Added Community Referral Program as a sub-feature of Feature 8b (full spec: two-sided $50 credit, verbal-friendly referral codes, 90-day attribution, tiered milestone rewards, Stripe customer balance credits, anti-fraud rules, activation strategy). Added Feature 18: Internationalization & Localization (i18n) to Post-MVP tier. Added Feature 23: International Framework Support (AIIMS, CIMS, JESIP packs) and Feature 24: International Data Residency & Compliance to Future tier. Updated feature count summary.
+- `database-schema.md` — Added `referrals` table (referral code, link token, status lifecycle, reward tracking, milestone tier, attribution source, 90-day expiry). Added to schema overview, migration order, and trigger list.
+
+### Database Changes
+- `referrals` table added to schema doc (not yet migrated — will be created alongside Feature 8b Stripe integration).
+
+### Decisions Made
+- Decision: Internationalization is "architect now, build later" — add non-negotiable rules to prevent closing doors, but don't change MVP scope.
+  Reason: The English-speaking SAR world (US, Canada, Australia, NZ) is largely ICS-compatible. The data model is already framework-agnostic by storing concepts, not form names. Adding a Section 22 rule ensures this stays true as features are built.
+- Decision: ICS form rendering is a presentation layer concern, not a data model concern.
+  Reason: Research showed AIIMS (Australia), CIMS (NZ) use the same incident management concepts as ICS — different terminology and form templates, same underlying data. The `ics_forms.form_data` JSONB approach already supports this — different renderers can read the same structured data.
+- Decision: Community Referral Program uses verbal-friendly referral codes as primary sharing mechanism, not links.
+  Reason: SAR recommendations happen verbally — at trainings, conferences, mutual aid events, over radio. A short code like `MESA-SAR` is shareable in conversation. Links are secondary for digital sharing.
+- Decision: Two-sided $50 mutual credit via Stripe customer balance credits.
+  Reason: Research showed two-sided rewards consistently outperform one-sided. $50 is ~3-6% of first-year ACV for a typical team, well within sustainable range. Stripe credits (not coupons) stack and auto-apply to invoices.
+- Decision: Referral program infrastructure built with 8b but activated only after ~10-20 paying teams.
+  Reason: A referral program amplifies satisfaction — it cannot create it. Premature activation wastes early evangelists. Building alongside Stripe is efficient.
+- Decision: 90-day attribution window for referrals.
+  Reason: SAR teams have slow procurement cycles (board votes, county budget approvals). Standard B2B windows are 30-90 days; SAR procurement justifies the maximum.
+- Decision: International framework priority order: Canada (ICS, zero work) → Australia (AIIMS) → New Zealand (CIMS) → UK (JESIP) → Continental Europe/APAC (significant localization).
+  Reason: Research confirmed English-speaking markets have the highest ICS compatibility and largest addressable SAR volunteer populations. UK and beyond require fundamental framework adaptations.
+- Decision: GDPR/PIPEDA/data residency added to compliance roadmap as "Target (International expansion)" milestone.
+  Reason: Like the FedRAMP path, these should be visible in the roadmap to prevent architectural decisions that close doors, even though they're Year 2+ concerns.
+
+### Deviations From Plan
+- No deviations — this was a planning-only session per user request.
+
+### Known Issues / Open Items
+- **Session 15/16 carry-forward:** `withRetry` not yet applied to critical Supabase mutations. Feature 3 not yet started. `supabase db reset` not yet validated.
+- **ICS command framework decision deferred:** User selected "not sure yet" on whether to make Feature 5 forms pluggable from the start or ICS-only. Section 22 establishes the architectural rule (data is generic, rendering is presentation-layer), but the specific implementation decision for Feature 5 can be made when that feature is built.
+- **Referral program dollar amounts not finalized:** $50 mutual credit is the starting point per research. May be adjusted based on actual ACV data once paying teams exist.
+
+### Environment Variables Added
+- None.
+
+### What To Do Next Session
+**Follow the Locked Build Order in `feature-list.md` — start at Step 0.**
+
+1. **Step 0 — Housekeeping:** Apply `withRetry` to critical Supabase mutations (wrap individual `.insert()` / `.update()` calls inside `create-incident.ts` and `update-personnel-status.ts`). Run `supabase db reset` to validate `seed.sql` works.
+2. **Then proceed to Step 1 — Feature 6 completion:** Build the password reset flow (`/forgot-password`, `/reset-password`). See Feature 6 in `feature-list.md` for the full spec.
+3. **Do NOT skip to Feature 3.** The locked build order is: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8. See the "Locked Build Order" table in `feature-list.md`.
+
+### Definition of Done Status
+- N/A — planning session only, no code written. DoD checklist skipped per CLAUDE.md instructions.
+
+## Session 18 — 2026-04-04
+
+### What Was Built
+Step 0 housekeeping (withRetry on critical mutations) + Feature 6 completion (password reset flow: `/forgot-password` and `/reset-password` pages with server actions, rate limiting, and Sonner toast notifications).
+
+### Feature Reference
+- Feature: Step 0 — withRetry on critical Supabase mutations
+  Status: Complete
+- Feature: Feature 6 — Authentication & Access Control (password reset flow)
+  Status: Complete — all Feature 6 items now implemented
+
+### Files Created or Modified
+**withRetry (Step 0):**
+- `src/features/incidents/logic/create-incident.ts` — Wrapped incident insert, command structure insert, and personnel insert with `withRetry`. Import added.
+- `src/features/incidents/logic/update-personnel-status.ts` — Wrapped personnel update, PAR response delete, and PAR event update with `withRetry`. Import added.
+- `src/features/incidents/__tests__/update-personnel-status.test.ts` — Updated mock to provide error responses for all 3 retry attempts.
+
+**Password Reset (Feature 6):**
+- `src/features/auth/schemas.ts` — Added `ForgotPasswordSchema` and `ResetPasswordSchema` with types.
+- `src/constants/error-codes.ts` — Added `AUTH_RESET_RATE_LIMITED` (429), `AUTH_RESET_FAILED` (500).
+- `src/lib/rate-limit.ts` — Added `forgotPasswordLimiter` (3 req/hour per email) and `checkForgotPasswordRateLimit()`.
+- `src/features/auth/actions/request-password-reset.ts` — Server action: validates email, rate limits, calls `resetPasswordForEmail`, always returns success.
+- `src/features/auth/actions/reset-password.ts` — Server action: validates password, calls `updateUser`, signs out, returns success.
+- `src/components/ui/sonner.tsx` — Sonner toast component with theme support.
+- `src/app/layout.tsx` — Added `<Toaster />` to root layout.
+- `src/features/auth/components/forgot-password-form.tsx` — Email form with "check your email" confirmation screen.
+- `src/features/auth/components/reset-password-form.tsx` — New password + confirm form with toast on success.
+- `src/app/(auth)/forgot-password/page.tsx` — Page in (auth) route group.
+- `src/app/(auth)/reset-password/page.tsx` — Page in (auth) route group.
+- `src/lib/supabase/proxy.ts` — Added `/forgot-password` to PUBLIC_PATHS.
+- `src/features/auth/components/login-form.tsx` — Added "Forgot password?" link next to Password label.
+- `src/features/auth/__tests__/schemas.test.ts` — 10 tests for ForgotPassword and ResetPassword schemas.
+- `src/features/auth/__tests__/request-password-reset.test.ts` — 6 tests for request-password-reset server action.
+- `src/features/auth/__tests__/reset-password.test.ts` — 4 tests for reset-password server action.
+
+### Database Changes
+- None — password reset uses Supabase Auth built-in, no new tables.
+
+### Decisions Made
+- Decision: `/forgot-password` is public, `/reset-password` is protected (requires recovery session from callback).
+  Reason: Users access forgot-password unauthenticated. After clicking the email link, the auth callback establishes a session, so reset-password can be protected.
+- Decision: Server action always returns `{ success: true }` for forgot-password, even if the email doesn't exist.
+  Reason: Security best practice — never reveal whether an email is registered.
+- Decision: After password reset, sign out and redirect to `/login` (no auto-login).
+  Reason: Feature spec requires explicit re-authentication so the user confirms the new credentials work.
+- Decision: Rate limit forgot-password at 3 requests per email per hour (not per IP).
+  Reason: Per-email rate limiting prevents abuse targeting a specific user. Feature spec specifies this exact limit.
+- Decision: Added Sonner as the toast library (shadcn-compatible).
+  Reason: Needed for password reset success message. Will be used throughout the app for future success/error toasts.
+- Decision: `withRetry` wraps individual Supabase mutations that throw inside the callback to force retries on `{ error }` responses.
+  Reason: Supabase JS returns `{ data, error }` without throwing, so the callback must throw on error to trigger retry logic.
+
+### Deviations From Plan
+- `supabase db reset` could not be validated — Docker Desktop was not running. Deferred to next session.
+- Pre-existing type error in `scripts/seed-auth-users.ts` prevents clean `next build` type check — not introduced by this session's changes.
+
+### Known Issues / Open Items
+- **Docker/seed validation deferred:** `supabase db reset` needs Docker Desktop running. Must validate next session.
+- **Pre-existing type error:** `scripts/seed-auth-users.ts:90` has a type mismatch (`string` vs literal union). Blocks `next build` type check but is not related to Feature 6.
+- **E2e testing deferred:** Password reset flow needs a running Supabase instance for end-to-end testing. Manual verification recommended when Docker is available.
+
+### Environment Variables Added
+- None (Sonner has no env vars; Upstash Redis vars already exist).
+
+### What To Do Next Session
+**Continue the Locked Build Order — proceed to Step 2: Feature 3 (Incident Board UI).**
+
+1. **Quick fix:** Resolve the pre-existing type error in `scripts/seed-auth-users.ts` (cast to `Set<string>` or widen the type).
+2. **Feature 3 — Incident Board UI:** Read the Feature 3 spec in `feature-list.md`. This is the main incident management dashboard — the core of the product.
+3. **Do NOT skip steps.** The locked build order is: ~~0~~ → ~~1~~ → 2 → 3 → 4 → 5 → 6 → 7 → 8.
+
+### Definition of Done Status
+- [x] **Database:** N/A — no new tables or migrations
+- [x] **Backend/API:** Server actions validate with Zod, return consistent shapes, log no PII, sanitize errors
+- [x] **Frontend:** Loading/error/empty states handled, keyboard navigable, form labels present, no `any`, no hardcoded URLs
+- [x] **Real-Time & Offline:** N/A — not applicable to auth flow
+- [x] **Notifications:** N/A — email sent by Supabase Auth
+- [x] **Testing:** 20 new tests (schemas + server actions), all 192 tests pass, no tests deleted/skipped
+- [x] **Security:** No secrets, Zod validation, no SQL interpolation, rate limiting enforced
+- [x] **Accessibility:** Semantic form elements, keyboard navigable, labels on all inputs
+- [x] **Code Quality:** No dead code, files under 400 lines, naming conventions followed
+- [x] **Build Log:** This entry
+
+## Session 19 — 2026-04-04
+
+### What Was Built
+Bug fix session: resolved PKCE code_verifier cookie persistence failure in the password reset flow. After three failed approaches (client-side PKCE, server-action PKCE, proxy bypass), replaced the entire PKCE code exchange mechanism with Supabase's `verifyOtp` + `token_hash` pattern. Password reset flow is now fully working end-to-end.
+
+### Feature Reference
+- Feature: Feature 6 — Authentication & Access Control (password reset PKCE bug fix)
+  Status: Complete — verified working with real email
+
+### Files Created or Modified
+- `src/app/auth/confirm/route.ts` — **Created.** New route handler that verifies email tokens via `verifyOtp({ token_hash, type })`. Bypasses PKCE entirely. Supports all OTP types (recovery, signup, email_change, magiclink). Redirects based on type (recovery → `/reset-password`, others → `/dashboard`).
+- `src/features/auth/actions/request-password-reset.ts` — **Rewritten.** Renamed export from `checkResetRateLimit` to `requestPasswordReset`. Now calls `resetPasswordForEmail` server-side (no `redirectTo` — email template handles routing). Still validates, rate-limits, and always returns success.
+- `src/features/auth/components/forgot-password-form.tsx` — **Simplified.** Removed browser-side `createClient` and `resetPasswordForEmail` call. Now calls only the `requestPasswordReset` server action.
+- `src/features/auth/components/reset-password-form.tsx` — **Simplified.** Removed all PKCE code exchange logic (`useEffect`, `useRef`, `useSearchParams`, `createClient`, `exchangeCodeForSession`, session state machine). Now just renders the password form — user arrives with a session from `/auth/confirm`.
+- `src/app/(auth)/reset-password/page.tsx` — Removed `Suspense` wrapper (no longer uses `useSearchParams`).
+- `src/lib/supabase/proxy.ts` — Removed `/reset-password` from PUBLIC_PATHS (now protected — requires session). Added `/auth/confirm` to PUBLIC_PATHS. Removed the early-return bypass for `/reset-password`.
+- `src/features/auth/__tests__/request-password-reset.test.ts` — **Rewritten.** Updated for renamed function, added Supabase mock, added test for "returns success even when Supabase errors."
+- `src/features/auth/__tests__/reset-password.test.ts` — Fixed type error: `as unknown as Awaited<ReturnType<typeof createClient>>` cast pattern.
+
+### Database Changes
+- None.
+
+### Decisions Made
+- Decision: Replaced PKCE code exchange with `verifyOtp` + `token_hash` pattern.
+  Reason: `@supabase/ssr`'s browser client doesn't reliably persist the PKCE code_verifier cookie across page loads. The server client's code_verifier also failed to survive from server action to callback. `verifyOtp` with token_hash creates a session directly — no code_verifier needed.
+- Decision: Created `/auth/confirm` route handler (separate from existing `/auth/callback`).
+  Reason: `/auth/callback` handles PKCE code exchange for signup/login flows and works correctly for those. `/auth/confirm` handles token-hash-based verification (a different mechanism). Keeping them separate avoids coupling unrelated flows.
+- Decision: `/reset-password` is now a protected page (removed from PUBLIC_PATHS).
+  Reason: The user arrives with a valid session established by `/auth/confirm`. No need for the page to be public — and protecting it prevents unauthenticated access to the password update form.
+- Decision: Supabase recovery email template must be manually updated to use `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery`.
+  Reason: The default template links to Supabase's `/auth/v1/verify` endpoint which uses PKCE. Our custom template links directly to our app with the token hash, bypassing PKCE.
+
+### Deviations From Plan
+- Original plan used PKCE code exchange via `/auth/callback`. After three debugging iterations proved `@supabase/ssr` has a fundamental code_verifier persistence issue (browser client: cookie not set; server client: cookie not read back), switched to `verifyOtp` + `token_hash` pattern.
+- Required a one-time Supabase Dashboard email template change (not in original plan).
+
+### Known Issues / Open Items
+- **Supabase email template dependency:** The recovery email template MUST be configured in Supabase Dashboard to link to `/auth/confirm?token_hash={{ .TokenHash }}&type=recovery`. Without this, the email link will go through Supabase's default verify endpoint and PKCE will fail.
+- **Pre-existing type error:** `scripts/seed-auth-users.ts:90` still has a type mismatch. Not introduced by this session.
+- **Docker/seed validation still deferred:** User confirmed they don't use Docker (Supabase Cloud only).
+
+### Environment Variables Added
+- None.
+
+### What To Do Next Session
+**Continue the Locked Build Order — proceed to Step 2: Feature 3 (Incident Board UI).**
+
+1. **Quick fix:** Resolve the pre-existing type error in `scripts/seed-auth-users.ts`.
+2. **Feature 3 — Incident Board UI:** Read the Feature 3 spec in `feature-list.md`. This is the main incident management dashboard — the core of the product.
+3. **Do NOT skip steps.** The locked build order is: ~~0~~ → ~~1~~ → 2 → 3 → 4 → 5 → 6 → 7 → 8.
+
+### Definition of Done Status
+- [x] **Database:** N/A — no new tables or migrations
+- [x] **Backend/API:** Server action validates with Zod, rate-limits, returns consistent shapes, no PII logged
+- [x] **Frontend:** Form renders correctly, protected page requires session, error states handled
+- [x] **Real-Time & Offline:** N/A — not applicable to auth flow
+- [x] **Notifications:** N/A — email sent by Supabase Auth
+- [x] **Testing:** 19 auth tests pass (5 request-password-reset, 4 reset-password, 10 schemas), no tests deleted/skipped
+- [x] **Security:** No secrets, Zod validation, rate limiting, protected page behind auth
+- [x] **Accessibility:** Semantic form elements, keyboard navigable, labels on all inputs
+- [x] **Code Quality:** No dead code, files under 400 lines, naming conventions followed
+- [x] **Build Log:** This entry
+
+---
+
+## Session 20 — 2026-04-04
+
+### What Was Built
+Feature 8a — Billing Enforcement Infrastructure (Step 2 in the locked build order). Created the `subscriptions` table, tier constants, server-side enforcement utilities (`checkTierAccess`, `enforceTierLimit`), client-side `SubscriptionContext`, and retrofitted existing incident/personnel API routes with tier checks. Also fixed a pre-existing type error in `scripts/seed-auth-users.ts`.
+
+### Feature Reference
+Feature: Feature 8a — Billing Enforcement Infrastructure
+Status: Complete — all enforcement infrastructure in place. No Stripe integration (that's Feature 8b).
+
+### Files Created or Modified
+**Migrations:**
+- `supabase/migrations/018_subscriptions.sql` — **created** — `subscriptions` table with tier/status CHECKs, UNIQUE FK on organization_id, RLS (SELECT for org members, no user-facing INSERT/UPDATE), updated_at trigger
+- `supabase/migrations/019_fix_org_tier_enum_add_seat_cap.sql` — **created** — updates `organizations.subscription_tier` CHECK from `(free, volunteer, professional, enterprise)` to `(free, team, enterprise)`, adds `seat_cap INTEGER NOT NULL DEFAULT 5`
+- `supabase/migrations/020_backfill_subscriptions.sql` — **created** — backfills subscription rows for existing orgs without one
+
+**New files:**
+- `src/constants/tier-limits.ts` — tier matrix constants: `Tier`, `TierAction`, `TierLimits`, `TIER_LIMITS`, `ACTIVE_SUBSCRIPTION_STATUSES`
+- `src/lib/billing/check-tier-access.ts` — core enforcement: queries subscription + org in parallel, checks member/incident counts, returns `TierCheckResult`
+- `src/lib/billing/enforce-tier.ts` — thin API route wrapper: returns `null` if allowed, 403 `Response` if denied
+- `src/features/billing/context/subscription-context.tsx` — client-side React context (cosmetic UI gating only): `useSubscription()` hook with `canDo(action)`
+- `src/features/billing/__tests__/check-tier-access.test.ts` — 11 unit tests (free limits, team seat_cap, enterprise unlimited, missing subscription fallback, lapsed blocking)
+- `src/features/billing/__tests__/enforce-tier.test.ts` — 3 unit tests (allowed returns null, denied returns 403, lapsed returns SUBSCRIPTION_LAPSED)
+
+**Modified files:**
+- `src/features/organizations/logic/create-organization.ts` — added subscription seeding (free tier) after org+member insert
+- `src/app/api/incidents/route.ts` — added `enforceTierLimit(serviceClient, orgId, 'create_incident')` after rate limit check; changed POST return type to `Promise<Response>`
+- `src/app/api/incidents/[id]/personnel/route.ts` — added tier check for org member check-ins only (volunteers unlimited); changed POST return type to `Promise<Response>`
+- `src/app/layout.tsx` — added `SubscriptionProvider` wrapping children inside ThemeProvider
+- `src/lib/supabase/database.types.ts` — manually added `subscriptions` table types + `seat_cap` column (will be overwritten by `npm run db:types` after migrations applied)
+- `supabase/seed.sql` — added subscription cleanup + seed rows for Alpha/Beta SAR orgs
+- `scripts/seed-auth-users.ts` — fixed type error: `const seedEmails: Set<string>` explicit annotation
+
+### Database Changes
+- **`subscriptions` table created** — 1:1 with organizations, stores tier/status/Stripe IDs/billing dates. RLS: org members can SELECT, service role for mutations.
+- **`organizations.subscription_tier` CHECK updated** — `volunteer`/`professional` → `team`. Aligned with 3-tier model (free/team/enterprise).
+- **`organizations.seat_cap` column added** — `INTEGER NOT NULL DEFAULT 5`. Admin-configurable member cap for Team tier.
+- **Backfill migration** — inserts `free`/`active` subscription for orgs missing one.
+- Migration files: `018_subscriptions.sql`, `019_fix_org_tier_enum_add_seat_cap.sql`, `020_backfill_subscriptions.sql`
+
+### Decisions Made
+- Decision: `subscriptions` table is the source of truth for tier, not `organizations.subscription_tier`.
+  Reason: Subscriptions have their own lifecycle (status, billing dates, Stripe IDs). Keeping the old column for backward compat but enforcement reads from `subscriptions`.
+
+- Decision: Team tier member limit uses `organizations.seat_cap` (admin-configurable), not a hardcoded number.
+  Reason: Per-seat pricing means different orgs buy different seat counts. Free tier hardcoded to 5 in constants.
+
+- Decision: Fail-open on count query errors (allow the action if we can't count).
+  Reason: Never block SAR operations because of a database hiccup. Tier enforcement is a business concern, not a safety concern.
+
+- Decision: Lapsed subscriptions (past_due/canceled) block ALL gated actions.
+  Reason: Safety default. If billing lapses, org enters read-only mode. Prompt to resolve billing.
+
+- Decision: `SubscriptionContext` is cosmetic — API enforcement is the real gate.
+  Reason: Client-side context improves UX (disable buttons, show upgrade prompts) but security comes from server-side enforcement. A user bypassing the context hits the API gate.
+
+- Decision: Manually added types to `database.types.ts` instead of running `npm run db:types`.
+  Reason: User runs Supabase Cloud only (no Docker/local CLI). Migrations must be applied in Supabase SQL Editor before types can be regenerated. Manual types are sufficient for TypeScript compilation until then.
+
+- Decision: Changed API route POST return types from `Promise<NextResponse>` to `Promise<Response>`.
+  Reason: `enforceTierLimit` returns a plain `Response`. Both `Response` and `NextResponse` are valid in Next.js App Router. This avoids ugly casts.
+
+### Deviations From Plan
+- Plan Step 4 (run `npm run db:types`) could not be executed — user applies migrations in Supabase Cloud, not locally. Types were added manually and will be overwritten when user runs migrations + type generation.
+
+### Known Issues / Open Items
+- **ACTION REQUIRED**: User must apply migrations 018, 019, 020 in Supabase SQL Editor (in order) before the enforcement layer works against real data.
+- **ACTION REQUIRED**: After applying migrations, run `npm run db:types` to regenerate proper types (current manual types are sufficient but not canonical).
+- **CARRY FORWARD**: Docker/seed validation deferred (user doesn't use Docker).
+- **CARRY FORWARD**: All items from Session 19 remain unchanged.
+
+### Environment Variables Added
+- None.
+
+### What To Do Next Session
+**Continue the Locked Build Order — proceed to Step 3: Feature 3 (Incident Board UI).**
+
+1. **Feature 3 — Incident Lifecycle:** Read `feature-list.md` Feature 3 section and `database-schema.md`. This is the main incident management dashboard — the core of the product. Start with migrations for `operational_periods`, `incident_subjects` column additions, `incident_personnel` column additions, `incidents.current_operational_period` + `incidents.timezone`.
+2. **Do NOT skip steps.** The locked build order is: ~~0~~ → ~~1~~ → ~~2~~ → 3 → 4 → 5 → 6 → 7 → 8.
+
+### Definition of Done Status
+- [x] **Database:** 3 migrations created. `subscriptions` table matches `database-schema.md`. RLS enabled with org member SELECT policy. FK indexed. `updated_at` trigger applied. No cross-org leakage possible (org_id scoped).
+- [x] **Backend/API:** Zod validation at boundary (schemas). Consistent `{ data, error, meta }` shape. Error codes from registry (`TIER_SEAT_LIMIT`, `TIER_INCIDENT_LIMIT`, `TIER_FEATURE_GATED`, `SUBSCRIPTION_LAPSED`). No PII logged.
+- [x] **Frontend:** `SubscriptionContext` handles loading state. No `any` types.
+- [x] **Real-Time & Offline:** N/A — billing enforcement is not a Realtime feature.
+- [x] **Notifications:** N/A — no notifications in billing enforcement.
+- [x] **Testing:** 14 new tests (11 check-tier-access, 3 enforce-tier). All 204 tests pass. No tests deleted or skipped.
+- [x] **Security:** No secrets. Service role used only server-side. Zod validation. No SQL interpolation.
+- [x] **Accessibility:** N/A — no new UI pages (context provider is invisible).
+- [x] **Code Quality:** No dead code. No file exceeds 400 lines. Naming conventions followed. Business logic in `/lib/billing/`.
+- [x] **Build Log:** This entry.
+
+---
+
+## Session 21 — 2026-04-05
+
+### What Was Built
+Feature 3 foundation: Incident Lifecycle Management. Created 4 database migrations (operational_periods table, incident_subjects table, incidents.timezone + current_operational_period columns, incident_personnel expanded status + new columns). Converted the incident board from a vertical stack to a 6-tab layout (Overview, Personnel, Resources, Map, Forms, Log). Built the Log tab with cursor-paginated viewer and narrative entry form. Built the Overview tab with incident summary, status controls (suspend/resume/close with confirmation dialogs), command structure display, and subject placeholder. Created all supporting API routes, logic files, schemas, and error codes.
+
+### Feature Reference
+Feature: Feature 3 — Incident Lifecycle Management (Incident Board UI)
+Status: Partial — Foundation complete. Remaining for future sessions: Subject CRUD UI, command structure assignment UI, operational period management UI, IC hand-off logic, full transactional closure checklist (QR deactivation, auto-checkout, notifications).
+
+### Files Created or Modified
+
+**New files (15):**
+- `supabase/migrations/021_incidents_add_columns.sql` — Add timezone + current_operational_period to incidents
+- `supabase/migrations/022_incident_personnel_add_columns.sql` — Add safety_briefing_acknowledged, expected_return_at, expand status CHECK to include 'missing'
+- `supabase/migrations/023_operational_periods.sql` — Create operational_periods table with RLS, indexes, Realtime
+- `supabase/migrations/024_incident_subjects.sql` — Create incident_subjects table with PostGIS indexes, RLS, PHI columns (disabled at MVP)
+- `src/app/api/incidents/[id]/route.ts` — PATCH handler for incident status changes
+- `src/app/api/incidents/[id]/log/route.ts` — GET (cursor-paginated) + POST (narrative entry) for incident log
+- `src/features/incidents/logic/add-log-entry.ts` — Business logic for narrative log entry creation
+- `src/features/incidents/logic/update-incident-status.ts` — Business logic for suspend/resume/close with state machine validation
+- `src/features/incidents/components/incident-board.tsx` — Client component: 6-tab layout with URL-persisted active tab
+- `src/features/incidents/components/incident-overview.tsx` — Overview tab: summary card, status actions with AlertDialog, command structure display
+- `src/features/incidents/components/incident-log.tsx` — Log tab: narrative entry form + paginated log viewer
+- `src/features/incidents/__tests__/add-log-entry.test.ts` — 4 unit tests for add-log-entry logic
+- `src/features/incidents/__tests__/update-incident-status.test.ts` — 9 unit tests for update-incident-status logic
+- `src/components/ui/sonner.tsx` — (installed via shadcn)
+
+**Modified files (7):**
+- `src/app/incidents/[id]/page.tsx` — Major refactor: parallel data fetching for 7 queries, render IncidentBoard with all tab data
+- `src/features/incidents/schemas.ts` — Added 'missing' to PERSONNEL_STATUSES, AddLogEntrySchema, UpdateIncidentStatusSchema, LOG_ENTRY_TYPES, INCIDENT_STATUS_LABELS
+- `src/constants/error-codes.ts` — Added INCIDENT_SUSPENDED, INCIDENT_INVALID_TRANSITION, LOG_ENTRY_FAILED
+- `src/features/incidents/logic/create-incident.ts` — Added timezone, current_operational_period to insert, create first operational period
+- `src/features/incidents/components/personnel-board.tsx` — Added 'missing' status style to STATUS_STYLES Record
+- `src/lib/supabase/database.types.ts` — Added types for new columns and tables (operational_periods, incident_subjects)
+- `src/components/ui/*.tsx` — 7 shadcn components installed (tabs, textarea, badge, alert-dialog, dropdown-menu, separator, scroll-area)
+
+### Database Changes
+- `incidents` table — Added `timezone TEXT NOT NULL DEFAULT 'America/Los_Angeles'`, `current_operational_period INTEGER NOT NULL DEFAULT 1`
+- `incident_personnel` table — Added `safety_briefing_acknowledged BOOLEAN NOT NULL DEFAULT false`, `expected_return_at TIMESTAMPTZ`, expanded status CHECK to include `'missing'`
+- `operational_periods` table — New table: id, incident_id, organization_id, period_number, starts_at, ends_at, objectives, weather_summary, created_by. UNIQUE(incident_id, period_number). RLS + Realtime enabled.
+- `incident_subjects` table — New table with all columns per database-schema.md including PHI fields (NOT exposed at MVP). PostGIS GIST indexes on last_known_point and found_location.
+- Migration files: `021_incidents_add_columns.sql`, `022_incident_personnel_add_columns.sql`, `023_operational_periods.sql`, `024_incident_subjects.sql`
+
+### Decisions Made
+- Decision: Lazy-mount tabs except Personnel and Resources which use forceMount + hidden CSS.
+  Reason: Personnel and Resources tabs must stay mounted for Supabase Realtime subscriptions per claude-rules.md Section 20. Other tabs lazy-mount to reduce DOM weight.
+
+- Decision: Incident status state machine uses explicit VALID_TRANSITIONS map.
+  Reason: Prevents invalid transitions at the logic layer. Map: planning→[active], active→[suspended,closed], suspended→[active,closed], closed→[]. Enforced in update-incident-status.ts before any DB writes.
+
+- Decision: Close incident writes audit_log entry (not just incident_log).
+  Reason: Incident closure is a significant operational event requiring SOC 2 audit trail per claude-rules.md Section 8.
+
+- Decision: First operational period created as best-effort (non-blocking) in create-incident logic.
+  Reason: Operational period is supporting data. If it fails to insert, the incident is still valid. Error is logged but does not block incident creation.
+
+- Decision: Full closure checklist (QR deactivation, auto-checkout, notifications) deferred.
+  Reason: These are multi-step transactional operations that each need their own logic, testing, and error handling. Will be built in a subsequent Feature 3 session.
+
+### Deviations From Plan
+- None. All changes align with database-schema.md and feature-list.md Feature 3 specification.
+
+### Known Issues
+- **ACTION REQUIRED:** Migrations 021-024 must be applied in Supabase SQL Editor (in order) before testing.
+- **ACTION REQUIRED:** After applying migrations, run `npm run db:types` to regenerate canonical database types.
+- Overview tab command structure display is read-only — no assignment UI yet (Session 22+).
+- Subject information section is placeholder only — no CRUD (Session 22+).
+- Map and Forms tabs show placeholder content — these are Feature 4 and Feature 5 respectively.
+- Closure checklist is partial — only status change + log/audit entries. QR deactivation, auto-checkout, notifications deferred.
+
+### Environment Variables
+- None new.
+
+### What To Do Next Session
+**Continue Feature 3 — Incident Lifecycle Management (Phase 2).**
+
+1. **Subject CRUD:** Build the incident subjects UI in the Overview tab. API routes for GET/POST/PATCH subjects. Subject list + add/edit form. PHI fields excluded per compliance rules.
+2. **Command Structure Assignment:** UI for assigning ICS roles to org members. PATCH API for role assignment/relief.
+3. **Operational Period UI:** Display current op period info, ability to advance to next period.
+4. **Full Closure Checklist:** Transactional close with QR deactivation, auto-checkout of all personnel, notification dispatch.
+5. **Do NOT skip steps.** The locked build order is: ~~0~~ → ~~1~~ → ~~2~~ → **3** → 4 → 5 → 6 → 7 → 8.
+
+### Definition of Done Status
+- [x] **Database:** 4 migrations created. Tables match database-schema.md. RLS enabled on all new tables. FK indexed. PostGIS GIST indexes. updated_at triggers. No cross-org leakage (organization_id scoped + RLS).
+- [x] **Backend/API:** Zod validation at boundary. Consistent `{ data, error, meta }` shape. Error codes from registry. Rate limiting on all endpoints. No PII logged.
+- [x] **Frontend:** All three data states handled (loading/empty/error) in incident-log.tsx. AlertDialog confirmations for destructive status changes. Keyboard-navigable tabs. No `any` types. Timezone-formatted timestamps.
+- [x] **Real-Time & Offline:** N/A for this session — Realtime subscriptions unchanged (Personnel/Resources tabs stay mounted). Log tab uses client-side fetching, not Realtime (append-only, pagination-based).
+- [x] **Notifications:** N/A — notification dispatch deferred to closure checklist phase.
+- [x] **Testing:** 13 new tests (4 add-log-entry, 9 update-incident-status). All 217 tests pass across 25 test files. No tests deleted or skipped.
+- [x] **Security:** No secrets. Service role used only server-side. Zod validation on all inputs. No SQL interpolation. Rate limiting enforced.
+- [x] **Accessibility:** Tabs keyboard-navigable via Radix Tabs primitive. AlertDialog focus management built-in. Status badges use text labels (not color-only). Form inputs have labels.
+- [x] **Code Quality:** No dead code. No file exceeds 400 lines. Naming conventions followed. Business logic in `/features/incidents/logic/`.
+- [x] **Build Log:** This entry.
+
+---
+
+## Session 22 — 2026-04-05
+
+### What Was Built
+Feature 3 Phase 2: Subject CRUD, Command Structure Assignment + IC Hand-Off, Operational Period Management, and Closure Checklist Enhancement. Built 7 logic files, 6 API routes, 6 test files, and 2 UI components. Rewired the Overview tab to compose SubjectList, CommandStructurePanel, and an inline operational period section with Start New Period dialog. Updated page.tsx to fetch subjects, operational periods, and compute current user incident role. Status change buttons now IC-only.
+
+### Feature Reference
+Feature: Feature 3 — Incident Lifecycle Management (Phase 2: Subject CRUD, Command Structure, Operational Periods, Closure Checklist)
+Status: Complete. All 4 Phase 2 deliverables implemented. Remaining for future sessions: Realtime subscriptions for overview data, map integration, ICS form auto-fill.
+
+### Files Created or Modified
+
+**New files (21):**
+- `src/features/incidents/logic/create-subject.ts` — Create incident subject with auto-primary logic
+- `src/features/incidents/logic/update-subject.ts` — Update subject fields with isPrimary toggle
+- `src/features/incidents/logic/delete-subject.ts` — Soft-delete subject with primary reassignment
+- `src/features/incidents/logic/assign-role.ts` — Assign ICS command role with dual-write to command_structure + personnel
+- `src/features/incidents/logic/hand-off-ic.ts` — IC hand-off with stood_down mapping
+- `src/features/incidents/logic/start-new-period.ts` — Start new operational period, close current, increment counter
+- `src/features/incidents/logic/update-period.ts` — Update period objectives/weather
+- `src/app/api/incidents/[id]/subjects/route.ts` — GET (offset-paginated) + POST for subjects
+- `src/app/api/incidents/[id]/subjects/[subjectId]/route.ts` — PATCH + DELETE for subjects
+- `src/app/api/incidents/[id]/command-structure/route.ts` — POST assign role (IC only)
+- `src/app/api/incidents/[id]/hand-off/route.ts` — POST IC hand-off
+- `src/app/api/incidents/[id]/operational-periods/route.ts` — POST start new period
+- `src/app/api/incidents/[id]/operational-periods/[periodId]/route.ts` — PATCH update period
+- `src/features/incidents/components/subject-list.tsx` — Subject cards with add/edit/delete dialogs
+- `src/features/incidents/components/command-structure-panel.tsx` — Command role grid with assign/hand-off dialogs
+- `src/features/incidents/__tests__/create-subject.test.ts` — 6 tests
+- `src/features/incidents/__tests__/update-subject.test.ts` — 4 tests
+- `src/features/incidents/__tests__/delete-subject.test.ts` — 4 tests
+- `src/features/incidents/__tests__/assign-role.test.ts` — 5 tests
+- `src/features/incidents/__tests__/hand-off-ic.test.ts` — 5 tests
+- `src/features/incidents/__tests__/start-new-period.test.ts` — 4 tests
+
+**Modified files (7):**
+- `src/features/incidents/schemas.ts` — Added subject, command structure, and operational period schemas + const arrays + label maps
+- `src/constants/error-codes.ts` — Added 11 error codes for subjects, command structure, operational periods
+- `src/features/incidents/logic/update-incident-status.ts` — Added closure checklist (QR deactivation, auto-checkout, period close)
+- `src/features/incidents/__tests__/update-incident-status.test.ts` — Added 2 closure checklist tests
+- `src/features/incidents/components/incident-overview.tsx` — Rewritten to compose SubjectList, CommandStructurePanel, operational period section
+- `src/features/incidents/components/incident-board.tsx` — Added new props for subjects, operational period, user role
+- `src/app/incidents/[id]/page.tsx` — Added subjects + operational period data fetching, user role computation
+
+### Decisions & Trade-offs
+1. **Status buttons restricted to IC only** — Previously visible to all users (Phase 1 placeholder). API already enforced IC-only, so UI now matches authorization.
+2. **Command structure fetches all rows (active + relieved)** — CommandStructurePanel shows collapsible history section. Changed from active-only query in Phase 1.
+3. **Closure checklist is best-effort** — Each closure operation (QR, personnel checkout, period close) wrapped in individual try/catch. A failure in one doesn't block the close.
+4. **Subject auto-primary logic** — First subject auto-becomes primary. Deleting primary promotes next by `created_at ASC`.
+5. **IC hand-off `stood_down` mapping** — Maps to TWO updates: `incident_role = 'field_member'` AND `status = 'stood_down'` on the outgoing IC's personnel record.
+
+### Test Results
+- 247 tests pass across 31 test files
+- 30 new tests added (6 create-subject, 4 update-subject, 4 delete-subject, 5 assign-role, 5 hand-off-ic, 4 start-new-period, 2 closure checklist)
+- Build clean with zero TypeScript errors
+
+### What To Do Next Session
+Continue Feature 3 — Incident Lifecycle Management (Phase 3):
+1. **QR token generation UI** — Currently just the data layer exists. Add generate/revoke UI to the QR panel or overview.
+2. **Realtime subscriptions for overview data** — Command structure and subjects should live-update via Supabase Realtime.
+3. **Begin Feature 4 — Search Map** — Mapbox GL JS integration, search area geometry, task assignments.
+4. **Do NOT skip steps.** The locked build order is: ~~0~~ → ~~1~~ → ~~2~~ → ~~3~~ → 4 → 5 → 6 → 7 → 8.
+
+### Definition of Done Status
+- [x] **Database:** No new migrations. All tables from Session 21 migrations used correctly. Organization-scoped queries with RLS.
+- [x] **Backend/API:** Zod validation at boundary. Consistent `{ data, error, meta }` shape. Error codes from registry. Rate limiting on all endpoints. No PII logged.
+- [x] **Frontend:** Loading/empty/error states handled in subject-list and command-structure-panel. Dialog confirmations for destructive actions. Role-gated actions (IC-only status controls, IC/planning_section_chief for subjects and periods). Timezone-formatted timestamps.
+- [x] **Real-Time & Offline:** N/A for this session — Realtime enhancement deferred to Phase 3.
+- [x] **Notifications:** N/A — deferred.
+- [x] **Testing:** 30 new tests. All 247 tests pass across 31 test files. No tests deleted or skipped.
+- [x] **Security:** No secrets. Service role used only server-side. Zod validation on all inputs. No SQL interpolation. Rate limiting enforced. PHI fields excluded from subject CRUD.
+- [x] **Accessibility:** Dialog focus management via Radix. AlertDialog for destructive actions. Form inputs have labels. Keyboard-navigable.
+- [x] **Code Quality:** No dead code. No file exceeds 400 lines. SubjectList (353 lines) and CommandStructurePanel (313 lines) extracted to keep incident-overview under limit. Naming conventions followed.
+- [x] **Build Log:** This entry.

@@ -2175,12 +2175,12 @@ This should produce **no output at all** — that means zero errors. If it print
      Deleted existing: admin@alphasar.test   ← only if re-running
      ...
 
-     Created: admin@alphasar.test (aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)
-     Created: ic@alphasar.test (bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb)
-     Created: ops@alphasar.test (cccccccc-cccc-cccc-cccc-cccccccccccc)
-     Created: field@alphasar.test (dddddddd-dddd-dddd-dddd-dddddddddddd)
-     Created: observer@alphasar.test (eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee)
-     Created: admin@betasar.test (ffffffff-ffff-ffff-ffff-ffffffffffff)
+     Created: admin@alphasar.test (aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa)
+     Created: ic@alphasar.test (bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb)
+     Created: ops@alphasar.test (cccccccc-cccc-4ccc-8ccc-cccccccccccc)
+     Created: field@alphasar.test (dddddddd-dddd-4ddd-8ddd-dddddddddddd)
+     Created: observer@alphasar.test (eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee)
+     Created: admin@betasar.test (ffffffff-ffff-4fff-8fff-ffffffffffff)
 
    Done! 6/6 users created.
    ```
@@ -2266,5 +2266,1008 @@ admin@betasar.test      / TestPassword1!
 - [ Pass ] Test 7 — AGENTS.md: 5 pattern sections
 
 Tested by: __Tyler Alex__ Date: __4/3/26__
+
+---
+
+## Session 18 — Feature 6 Completion (Password Reset) + withRetry
+
+### What Was Built
+Applied `withRetry` to critical Supabase mutations in incident creation and personnel updates. Built the complete password reset flow: `/forgot-password` page, `/reset-password` page, server actions, rate limiting (3/email/hour), Sonner toast notifications, and "Forgot password?" link on login form.
+
+### Automated Test Results
+All 192 tests pass across 21 test files. No tests deleted or skipped.
+
+### How To Run The Automated Tests Yourself
+
+Open a terminal in the project root (`sargos` folder) and run:
+
+```
+npm test
+```
+
+You should see output like:
+```
+ Test Files  21 passed (21)
+      Tests  192 passed (192)
+```
+
+To run just the new tests from this session:
+
+```
+npx vitest run src/features/auth/__tests__/schemas.test.ts
+npx vitest run src/features/auth/__tests__/request-password-reset.test.ts
+npx vitest run src/features/auth/__tests__/reset-password.test.ts
+```
+
+---
+
+### Manual Verification
+
+#### Test 1 — Forgot Password Page Loads
+
+**What you're checking:** The forgot-password page is accessible without logging in and shows an email form.
+
+**Steps:**
+1. Run `npm run dev` to start the dev server
+2. Open `http://localhost:3000/forgot-password` in your browser
+3. You should see:
+   - SARGOS brand header at the top
+   - A card titled "Reset your password" with description "Enter your email and we'll send you a reset link"
+   - An email input field with a label "Email"
+   - A "Send reset link" button
+   - A "Remember your password? Sign in" link at the bottom
+
+**Expected result:** Page loads without redirect to login. Form renders correctly.
+
+[Pass]
+
+---
+
+#### Test 2 — Login Page Has Forgot Password Link
+
+**What you're checking:** The login page now has a "Forgot password?" link next to the Password label.
+
+**Steps:**
+1. Open `http://localhost:3000/login` in your browser
+2. Look at the Password field area — to the right of the "Password" label, you should see a small "Forgot password?" link
+3. Click the link
+
+**Expected result:** You are navigated to `/forgot-password`.
+
+[Pass]
+
+---
+
+#### Test 3 — Forgot Password Form Validation
+
+**What you're checking:** The form validates the email before submitting.
+
+**Steps:**
+1. On `/forgot-password`, click "Send reset link" without entering anything
+2. You should see a validation error message: "Please enter a valid email address"
+3. Type "not-an-email" and click "Send reset link"
+4. You should see the same validation error
+
+**Expected result:** Form shows client-side validation errors and does not submit.
+
+[Pass]
+
+---
+
+#### Test 4 — Forgot Password Submission Shows Confirmation
+
+**What you're checking:** After submitting a valid email, the form switches to a confirmation screen (regardless of whether the email exists in the system).
+
+**Steps:**
+1. On `/forgot-password`, enter any valid email format (e.g., `test@example.com`)
+2. Click "Send reset link"
+3. The button should briefly show "Sending link..."
+4. The form should be replaced by a confirmation screen showing:
+   - An envelope icon
+   - "Check your email" heading
+   - Message mentioning the email you entered
+   - "Back to sign in" link
+
+**Expected result:** Confirmation screen appears. No error even if the email doesn't exist in the system (security: we never reveal email existence).
+
+[Pass]
+
+---
+
+#### Test 5 — Reset Password Page (Requires Recovery Session)
+
+**What you're checking:** The reset-password page is protected — you can't access it without a valid recovery session.
+
+**Steps:**
+1. Log out of any existing session
+2. Try to open `http://localhost:3000/reset-password` directly
+3. You should be redirected to `/login?next=/reset-password`
+
+**Expected result:** Redirect to login page. The reset-password page requires a recovery session (obtained by clicking the link in the password reset email).
+
+[Pass]
+
+---
+
+#### Test 6 — Full End-to-End Flow (Requires Supabase Email)
+
+**What you're checking:** The complete password reset flow works from start to finish.
+
+**Prerequisites:** A test user account must exist with a real email. Supabase recovery email template must link to `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery`.
+
+**Steps:**
+1. Go to `/forgot-password`
+2. Enter the test user's email
+3. Click "Send reset link"
+4. Check for the reset email in your inbox
+5. Click the reset link — goes to `/auth/confirm?token_hash=...&type=recovery` then redirects to `/reset-password`
+6. You should land on `/reset-password` with a form showing:
+   - "Set a new password" heading
+   - "New password" and "Confirm new password" fields
+7. Enter a new password (8+ chars, 1 uppercase, 1 number) + confirm it
+8. Click "Reset password"
+9. You should see a toast notification: "Password updated. Sign in with your new password."
+10. You should be redirected to `/login`
+11. Log in with the new password
+
+**Expected result:** Password is changed. Toast appears. Redirect to login. Can log in with new password.
+
+[Pass]
+
+---
+
+### Checklist
+- [ Pass ] Test 1 — Forgot password page loads (accessible without auth)
+- [ Pass ] Test 2 — Login page has "Forgot password?" link
+- [ Pass ] Test 3 — Forgot password form validation works
+- [ Pass ] Test 4 — Submission shows confirmation screen
+- [ Pass ] Test 5 — Reset password page redirects without session
+- [ Pass ] Test 6 — Full e2e flow (if Supabase email available)
+
+Tested by: __Tyler Alex__ Date: __4/4/26__
+
+---
+
+## Session 20 — Feature 8a: Billing Enforcement Infrastructure
+
+### What Was Built
+Tier enforcement infrastructure: `subscriptions` table, tier constants, `checkTierAccess` utility, `enforceTierLimit` API helper, `SubscriptionContext` client-side provider, and tier enforcement retrofitted on incident creation and personnel check-in routes. Three tiers: Free (5 members, 1 active incident), Team (seat_cap members, unlimited incidents), Enterprise (unlimited everything).
+
+### Pre-Test Checklist
+Before running tests, confirm:
+- [ done ] Migrations 018, 019, 020 applied in Supabase SQL Editor **in order** — no errors
+- [ done ] Seed data re-run (re-run `seed.sql` to add subscription rows for Alpha/Beta SAR)
+- [ done ] Dev server started: `npm run dev`
+- [ done ] Logged in as `admin@alphasar.test` / `TestPassword1!`
+
+---
+
+### TEST 1: Apply Migrations 018–020
+
+**Purpose:** Create the `subscriptions` table, fix the tier enum, add `seat_cap`, and backfill subscriptions.
+**Tool:** Supabase Dashboard → SQL Editor
+**Steps:**
+1. Paste and run `supabase/migrations/018_subscriptions.sql` — confirm "Success. No rows returned."
+2. Paste and run `supabase/migrations/019_fix_org_tier_enum_add_seat_cap.sql` — confirm "Success."
+3. Paste and run `supabase/migrations/020_backfill_subscriptions.sql` — confirm "Success."
+4. Open Table Editor → confirm `subscriptions` table is visible
+5. Open Table Editor → `organizations` → confirm `seat_cap` column exists (default 5)
+6. Open Table Editor → `subscriptions` → confirm rows exist for your orgs
+
+**Expected Result:** All 3 migrations apply cleanly. `subscriptions` table visible with `free`/`active` rows. `organizations.seat_cap` = 5.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 2: Re-Run Seed Data
+
+**Purpose:** Add subscription seed rows for Alpha and Beta SAR orgs.
+**Tool:** Supabase Dashboard → SQL Editor
+**Steps:**
+1. Re-run `supabase/seed.sql` in the SQL Editor (the entire file)
+2. Confirm "Success. No rows returned."
+3. In Table Editor → `subscriptions`, verify:
+   - Alpha SAR (`11111111-...`) has tier `free`, status `active`
+   - Beta SAR (`22222222-...`) has tier `free`, status `active`
+
+**Expected Result:** Both orgs have subscription rows.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 3: Free Tier — Incident Limit (1 active incident)
+
+**Purpose:** Verify free tier blocks creation of a 2nd active incident.
+**Tool:** Browser or curl
+**Steps:**
+1. Log in as `admin@alphasar.test` — Alpha SAR already has 1 active incident (from seed data)
+2. Try to create a new incident via the UI (click "+ New Incident", fill form, submit)
+3. Alternatively, use curl:
+   ```bash
+   curl -X POST http://localhost:3000/api/incidents \
+     -H "Content-Type: application/json" \
+     -H "Cookie: <your session cookie>" \
+     -d '{"name":"Test Incident 2","incidentType":"lost_person","locationAddress":"Test Location"}'
+   ```
+
+**Expected Result:** HTTP 403 with error code `TIER_INCIDENT_LIMIT` and message indicating the free tier limit of 1 active incident has been reached.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 4: Free Tier — Member Seat Limit (5 members)
+
+**Purpose:** Verify free tier blocks check-in of a 6th org member.
+**Tool:** Supabase SQL Editor + Browser
+**Steps:**
+1. Alpha SAR already has 5 members (seed data). Verify in Table Editor → `organization_members` → filter by Alpha SAR org ID → count rows where `is_active = true`
+2. On the active incident board, try to check in a 6th org member
+   - If you only have 5 seed members and all 5 are already org members, this test verifies that the count is at the limit
+   - To test: try checking in any org member via the personnel check-in form
+
+**Expected Result:** If the org already has 5 active members, attempting to add another org member (not a walk-up volunteer) to an incident should return 403 with `TIER_SEAT_LIMIT`.
+
+**Important:** Walk-up volunteers (QR check-in) should still work — they are NOT counted against the seat limit on any tier.
+**Pass / Fail:** [ Fail ]
+**Notes:** _N/A — no add-member endpoint exists yet; enforcement logic covered by unit tests in enforce-tier.test.ts_
+
+---
+
+### TEST 5: Walk-Up Volunteers Are Unlimited
+
+**Purpose:** Verify QR check-in volunteers bypass the member seat limit.
+**Tool:** Browser (incognito)
+**Steps:**
+1. On the active incident, generate a QR code (if not already active)
+2. Open the check-in URL in an incognito window
+3. Fill in volunteer name, phone, acknowledge safety briefing
+4. Submit
+
+**Expected Result:** Volunteer is checked in successfully (201) regardless of how many org members exist. Walk-up volunteers do not count toward the seat limit.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 6: Subscription Context Loads in UI
+
+**Purpose:** Verify the `SubscriptionContext` loads tier data on the client side.
+**Tool:** Browser DevTools
+**Steps:**
+1. Log in and navigate to `/dashboard`
+2. Open DevTools → Console
+3. The `SubscriptionProvider` fetches tier info on mount. Check the Network tab for a request to `/rest/v1/subscriptions` — it should return your org's subscription row
+4. No console errors related to "subscription" or "tier"
+
+**Expected Result:** No errors. The subscription data loads silently in the background.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 7: Automated Tests Pass
+
+**Purpose:** Verify all unit tests pass including the 14 new billing tests.
+**Tool:** Terminal
+**Steps:**
+1. Run: `npm test`
+2. Check output
+
+**Expected Result:** 204 tests pass across 23 test files. 0 failures.
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### TEST 8: TypeScript Compiles Clean
+
+**Purpose:** Verify zero TypeScript errors.
+**Tool:** Terminal
+**Steps:**
+1. Run: `npx tsc --noEmit`
+
+**Expected Result:** No output (zero errors).
+**Pass / Fail:** [ Pass ]
+**Notes:** _______________
+
+---
+
+### Database Verification
+
+Run in Supabase SQL Editor after applying migrations:
+
+```sql
+-- Verify subscriptions table exists and has RLS
+SELECT tablename, rowsecurity FROM pg_tables
+WHERE schemaname = 'public' AND tablename = 'subscriptions';
+-- Expected: 1 row, rowsecurity = true
+```
+
+```sql
+-- Verify RLS policies on subscriptions
+SELECT policyname, cmd FROM pg_policies
+WHERE schemaname = 'public' AND tablename = 'subscriptions';
+-- Expected: 1 policy (SELECT for org members)
+```
+
+```sql
+-- Verify tier enum was fixed on organizations
+SELECT DISTINCT subscription_tier FROM organizations;
+-- Expected: only 'free', 'team', or 'enterprise' — no 'volunteer' or 'professional'
+```
+
+```sql
+-- Verify seat_cap column exists with default
+SELECT seat_cap FROM organizations LIMIT 5;
+-- Expected: all rows show 5 (the default)
+```
+
+```sql
+-- Verify backfill worked (every org has a subscription)
+SELECT o.name, s.tier, s.status
+FROM organizations o
+LEFT JOIN subscriptions s ON s.organization_id = o.id;
+-- Expected: every org has a subscription row (no NULLs in tier/status)
+```
+
+---
+
+### Known Limitations
+- No Stripe integration — all orgs are Free tier with no way to upgrade via UI. Feature 8b will add Stripe.
+- `SubscriptionContext` fetches tier data but no UI components consume it yet. Future features will use `canDo(action)` to disable buttons and show upgrade prompts.
+- Tier enforcement is fail-open: if the count query fails, the action is allowed. This is by design for a life-safety platform.
+
+---
+
+### Checklist
+- [ Pass ] Test 1 — Migrations 018–020 applied cleanly
+- [ Pass ] Test 2 — Seed data re-run with subscription rows
+- [ Pass ] Test 3 — Free tier incident limit enforced (403)
+- [ Fail ] Test 4 — Free tier member seat limit enforced (403)
+- [ Pass ] Test 5 — Walk-up volunteers bypass seat limit
+- [ Pass ] Test 6 — SubscriptionContext loads without errors
+- [ Pass ] Test 7 — All 204 automated tests pass
+- [ Pass ] Test 8 — TypeScript zero errors
+
+Tested by: __Tyler Alex__ Date: __4/5/26__
+
+---
+
+## Session 21 — Feature 3 Foundation: Tabbed Layout + Log Tab + Status Controls
+
+### What Was Built
+Feature 3 foundation: 4 database migrations (operational_periods, incident_subjects, incidents columns, incident_personnel columns), 6-tab incident board layout, Log tab with cursor-paginated viewer and narrative entry form, Overview tab with status controls (suspend/resume/close), and all supporting API routes, logic, schemas, and error codes.
+
+### Pre-Test Checklist
+Before running tests, confirm:
+- [ ] Dev server started: `npm run dev`
+- [ ] Supabase local or cloud instance connected
+- [ ] Test user accounts exist (org admin + member from seed data)
+- [ ] **Migrations 021–024 applied in Supabase SQL Editor (in order)**
+- [ ] After migrations: `npm run db:types` run to regenerate canonical types
+
+---
+
+### TEST 1: Apply Migrations 021–024
+
+**Purpose:** Verify all 4 new migrations apply without errors
+**Tool:** Supabase SQL Editor
+
+**Steps:**
+1. Open Supabase Dashboard → SQL Editor
+2. Run migration `021_incidents_add_columns.sql`:
+   ```sql
+   -- Copy contents of supabase/migrations/021_incidents_add_columns.sql and execute
+   ```
+3. Run migration `022_incident_personnel_add_columns.sql`
+4. Run migration `023_operational_periods.sql`
+5. Run migration `024_incident_subjects.sql`
+6. Verify in Table Editor: `incidents` table has `timezone` and `current_operational_period` columns
+7. Verify `incident_personnel` table has `safety_briefing_acknowledged` and `expected_return_at` columns
+8. Verify `operational_periods` table exists with correct columns
+9. Verify `incident_subjects` table exists with correct columns (including PostGIS columns)
+
+**Expected:** All 4 migrations execute without errors. New tables and columns appear in Table Editor.
+
+[Pass]
+
+---
+
+### TEST 2: Tabbed Layout Renders
+
+**Purpose:** Verify the incident board renders with 6 tabs and URL persistence
+**Tool:** Browser
+
+**Steps:**
+1. Navigate to `/dashboard`
+2. Click on an existing incident (or create one first)
+3. Verify the incident board shows 6 tabs: Overview, Personnel, Resources, Map, Forms, Log
+4. Default tab should be "Overview"
+5. Click each tab — verify the URL updates (e.g., `?tab=personnel`, `?tab=log`)
+6. Copy the URL with `?tab=log` and paste in a new browser tab — verify the Log tab is active on load
+7. Verify Personnel and Resources tabs show their existing content (same as before the refactor)
+
+**Expected:** All 6 tabs render. URL reflects active tab. Tab state persists on page reload.
+
+[Pass]
+
+---
+
+### TEST 3: Overview Tab — Incident Summary
+
+**Purpose:** Verify the Overview tab displays incident details correctly
+**Tool:** Browser
+
+**Steps:**
+1. Navigate to an incident's Overview tab
+2. Verify the following are displayed in the summary card:
+   - Incident name
+   - Incident type label (e.g., "Missing Person", "Wilderness Rescue")
+   - Status badge (color-coded by status)
+   - Location address (if set)
+   - Start date formatted with the incident's timezone abbreviation (e.g., "Started Apr 03, 2026, PST")
+   - Operational period shown as "Op Period 1"
+3. Verify the "Command Structure" section shows active ICS role assignments (if any exist)
+4. Verify the "Subject Information" section shows a placeholder message
+
+**Expected:** All incident details display correctly. Times are formatted in incident timezone.
+
+[Pass]
+
+---
+
+### TEST 4: Overview Tab — Suspend an Active Incident
+
+**Purpose:** Verify the suspend flow works with confirmation dialog
+**Tool:** Browser
+
+**Steps:**
+1. Navigate to an **active** incident's Overview tab
+2. Verify a "Suspend" button is visible (outline style)
+3. Click "Suspend"
+4. Verify an AlertDialog appears with:
+   - Title: "Suspend Incident?"
+   - Warning message about pausing field operations
+   - Cancel and "Suspend Incident" buttons
+5. Click "Cancel" — verify dialog closes, status unchanged
+6. Click "Suspend" again, then click "Suspend Incident" in the dialog
+7. Verify:
+   - Status badge text changes to "Suspended" (outline style, border only)
+   - Suspend button disappears
+   - "Resume" and "Close Incident" buttons appear
+   - A success toast notification appears
+
+**Expected:** Incident status changes to suspended. UI updates optimistically.
+
+[Pass]
+
+**Database check:** In Supabase, verify:
+```sql
+SELECT status, suspended_at FROM incidents WHERE id = '<incident-id>';
+-- status should be 'suspended', suspended_at should be non-null
+```
+
+---
+
+### TEST 5: Overview Tab — Resume a Suspended Incident
+
+**Purpose:** Verify the resume flow works
+**Tool:** Browser
+
+**Steps:**
+1. With a suspended incident (from Test 4), click "Resume Incident"
+2. Verify AlertDialog appears with resume confirmation
+3. Click "Confirm Resume"
+4. Verify status badge text changes back to "Active" (primary/solid style)
+5. Verify "Suspend Incident" button reappears
+
+**Expected:** Incident status changes back to active.
+
+[Pass]
+
+**Database check:**
+```sql
+SELECT status, suspended_at FROM incidents WHERE id = '<incident-id>';
+-- status should be 'active', suspended_at should be null
+```
+
+---
+
+### TEST 6: Overview Tab — Close an Incident
+
+**Purpose:** Verify the close flow with after-action notes
+**Tool:** Browser
+
+**Steps:**
+1. With an active or suspended incident, click "Close Incident"
+2. Verify AlertDialog appears with:
+   - Title: "Close Incident?"
+   - Warning about finality
+   - Textarea for after-action notes (optional)
+3. Type some notes in the textarea (e.g., "Subject found safe at 14:00 in sector 3")
+4. Click "Close Incident"
+5. Verify:
+   - Status badge text changes to "Closed" (secondary/gray style)
+   - All action buttons disappear (closed is terminal)
+   - Success toast appears
+
+**Expected:** Incident is closed. No further status changes possible.
+
+[Pass]
+
+**Database check:**
+```sql
+SELECT status, closed_at, after_action_notes FROM incidents WHERE id = '<incident-id>';
+-- status should be 'closed', closed_at non-null, after_action_notes contains your text
+```
+
+---
+
+### TEST 7: Log Tab — Add a Narrative Entry
+
+**Purpose:** Verify narrative log entries can be created
+**Tool:** Browser
+
+**Steps:**
+1. Navigate to an active incident's Log tab
+2. Verify the "Add Log Entry" form is visible at the top with:
+   - Textarea with placeholder text
+   - "Add Entry" submit button
+3. Type a message: "Search teams deployed to sectors 1-3 at 14:00"
+4. Click "Add Entry" (or press Ctrl+Enter / Cmd+Enter)
+5. Verify:
+   - The textarea clears
+   - The new entry appears at the top of the log list
+   - Entry shows: timestamp, "narrative" badge, your display name, the message text
+
+**Expected:** Entry is created and displayed immediately.
+
+[Pass]
+
+**Database check:**
+```sql
+SELECT * FROM incident_log WHERE incident_id = '<incident-id>' ORDER BY created_at DESC LIMIT 5;
+-- Should see your narrative entry with correct actor_name and message
+```
+
+---
+
+### TEST 8: Log Tab — Pagination
+
+**Purpose:** Verify cursor-based pagination works
+**Tool:** Browser + curl
+
+**Steps:**
+1. Add several log entries (at least 3-5) to have some data
+2. Test the API directly with a small limit:
+   ```bash
+   curl -H "Cookie: <your-auth-cookie>" \
+     "http://localhost:3000/api/incidents/<id>/log?limit=2"
+   ```
+3. Verify the response includes:
+   - `data.entries` — array of 2 entries
+   - `meta.cursor` — non-null opaque cursor string
+   - `meta.hasMore` — true (if you have more than 2 entries)
+4. Use the cursor to fetch the next page:
+   ```bash
+   curl -H "Cookie: <your-auth-cookie>" \
+     "http://localhost:3000/api/incidents/<id>/log?limit=2&cursor=<cursor-value>"
+   ```
+5. Verify the next page of entries is returned (different entries than the first page)
+6. In the browser Log tab, if there are enough entries, verify a "Load More" button appears at the bottom
+
+**Expected:** Cursor pagination returns sequential pages without duplicates.
+
+[Pass]
+
+---
+
+### TEST 9: Log Tab — Type Filter
+
+**Purpose:** Verify the optional type filter on log entries
+**Tool:** curl
+
+**Steps:**
+1. Ensure you have at least one narrative entry and one status_change entry (created by suspend/resume/close actions)
+2. Fetch with type filter:
+   ```bash
+   curl -H "Cookie: <your-auth-cookie>" \
+     "http://localhost:3000/api/incidents/<id>/log?type=narrative"
+   ```
+3. Verify only narrative entries are returned
+4. Fetch status changes:
+   ```bash
+   curl -H "Cookie: <your-auth-cookie>" \
+     "http://localhost:3000/api/incidents/<id>/log?type=status_change"
+   ```
+5. Verify only status_change entries are returned
+
+**Expected:** Type filter correctly restricts results.
+
+[Pass]
+
+---
+
+### TEST 10: Invalid Status Transition Rejected
+
+**Purpose:** Verify the status state machine rejects invalid transitions
+**Tool:** curl
+
+**Steps:**
+1. Close an incident first (via UI or API)
+2. Attempt to reopen it:
+   ```bash
+   curl -X PATCH -H "Content-Type: application/json" \
+     -H "Cookie: <your-auth-cookie>" \
+     -d '{"status": "active"}' \
+     "http://localhost:3000/api/incidents/<closed-incident-id>"
+   ```
+3. Verify you get a 422 response with error code `INCIDENT_INVALID_TRANSITION`
+
+**Expected:** HTTP 422 with clear error message. Incident status unchanged.
+
+[Pass]
+
+---
+
+### TEST 11: Rate Limiting on Log Entry Creation
+
+**Purpose:** Verify rate limiting prevents abuse
+**Tool:** Terminal (rapid curl loop)
+
+**Steps:**
+1. Run 65 rapid POST requests in succession:
+   ```bash
+   for i in $(seq 1 65); do
+     curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+       -H "Content-Type: application/json" \
+       -H "Cookie: <your-auth-cookie>" \
+       -d "{\"message\": \"Entry $i\"}" \
+       "http://localhost:3000/api/incidents/<id>/log"
+   done
+   ```
+2. Verify that the first 60 return HTTP 201
+3. Verify that requests beyond 60 return HTTP 429 with a `Retry-After` header
+
+**Expected:** Rate limit of 60 req/min per user enforced.
+
+[Skipped]
+
+Note: "Skip it — rate limiting uses Upstash Redis which you'd need running locally. It's not worth setting up just for this test. The rate limit logic is covered by the automated test suite."
+
+---
+
+### TEST 12: Cross-Org Data Leakage Check
+
+**Purpose:** Verify RLS prevents accessing another org's incident data
+**Tool:** Browser / curl
+
+**Steps:**
+1. Log in as a user in Organization A
+2. Note an incident ID belonging to Organization B (from Supabase Table Editor)
+3. Attempt to fetch that incident's log:
+   ```bash
+   curl -H "Cookie: <org-a-user-cookie>" \
+     "http://localhost:3000/api/incidents/<org-b-incident-id>/log"
+   ```
+4. Verify you get a 404 (INCIDENT_NOT_FOUND), not a 200 with empty data
+
+**Expected:** 404 response. No data from another org is ever returned.
+
+[Pass]
+
+---
+
+### TEST 13: Automated Test Suite
+
+**Purpose:** Verify all tests pass
+**Tool:** Terminal
+
+**Steps:**
+1. Run the full test suite:
+   ```bash
+   npx vitest run
+   ```
+2. Verify output: 217 tests pass across 25 test files
+3. Run type check:
+   ```bash
+   npx tsc --noEmit
+   ```
+4. Verify: zero type errors
+5. Run production build:
+   ```bash
+   npm run build
+   ```
+6. Verify: build succeeds
+
+**Expected:** All 217 tests pass. Zero type errors. Production build succeeds.
+
+[Pass]
+
+---
+
+### Database Verification
+
+After applying migrations, run these queries in Supabase SQL Editor:
+
+```sql
+-- 1. Verify incidents columns added
+SELECT column_name, data_type, column_default
+FROM information_schema.columns
+WHERE table_name = 'incidents' AND column_name IN ('timezone', 'current_operational_period');
+-- Expected: timezone (text, default 'America/Los_Angeles'), current_operational_period (integer, default 1)
+
+-- 2. Verify incident_personnel columns added
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name = 'incident_personnel' AND column_name IN ('safety_briefing_acknowledged', 'expected_return_at');
+-- Expected: safety_briefing_acknowledged (boolean), expected_return_at (timestamp with time zone)
+
+-- 3. Verify 'missing' status is allowed
+INSERT INTO incident_personnel (incident_id, organization_id, status, incident_role)
+VALUES ('00000000-0000-0000-0000-000000000000', '00000000-0000-0000-0000-000000000000', 'missing', 'field_member');
+-- Expected: passes CHECK constraint (will fail on FK, that's fine — the CHECK passed)
+
+-- 4. Verify operational_periods table exists with RLS
+SELECT tablename, rowsecurity FROM pg_tables WHERE tablename = 'operational_periods';
+-- Expected: rowsecurity = true
+
+-- 5. Verify incident_subjects table exists with RLS
+SELECT tablename, rowsecurity FROM pg_tables WHERE tablename = 'incident_subjects';
+-- Expected: rowsecurity = true
+
+-- 6. Verify PostGIS GIST indexes on incident_subjects
+SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'incident_subjects' AND indexdef LIKE '%gist%';
+-- Expected: idx_incident_subjects_lkp (GIST on last_known_point), idx_incident_subjects_found_location (GIST on found_location)
+```
+
+---
+
+### Known Limitations
+- Overview tab command structure is read-only — no assignment UI yet (Session 22+)
+- Subject information section is placeholder — no CRUD (Session 22+)
+- Map and Forms tabs show placeholder content (Feature 4 and Feature 5)
+- Incident closure is partial — only status change + log/audit entries. Full closure checklist (QR deactivation, auto-checkout, notifications) deferred to future session.
+- Log tab does not use Realtime — uses client-side polling via "Load More" pagination. Real-time log updates can be added later.
+- After-action notes field on close is optional (not required) — may want to make it required in production.
+
+---
+
+### Checklist
+- [ Pass ] Test 1 — Migrations 021–024 applied cleanly
+- [ Pass ] Test 2 — Tabbed layout renders with URL persistence
+- [ Pass ] Test 3 — Overview tab displays incident summary
+- [ Pass ] Test 4 — Suspend incident with confirmation dialog
+- [ Pass ] Test 5 — Resume suspended incident
+- [ Pass ] Test 6 — Close incident with after-action notes
+- [ Pass ] Test 7 — Add narrative log entry
+- [ Pass ] Test 8 — Log pagination works
+- [ Pass ] Test 9 — Log type filter works
+- [ Pass ] Test 10 — Invalid status transition rejected (422)
+- [ Skipped ] Test 11 — Rate limiting enforced on log entries
+- [ Pass ] Test 12 — Cross-org data leakage check (404)
+- [ Pass ] Test 13 — All 217 automated tests pass
+
+Tested by: __Tyler Alex__ Date: __4/5/26__
+
+---
+
+## Session 22 — Feature 3 Phase 2: Subject CRUD, Command Structure, Operational Periods, Closure Checklist
+
+### What Was Built
+Subject CRUD (add/edit/delete subjects with auto-primary logic), Command Structure Assignment (assign ICS roles, IC hand-off), Operational Period Management (start new period, update objectives/weather), Closure Checklist Enhancement (QR deactivation, auto-checkout, period close on incident close), and 2 new UI components (SubjectList, CommandStructurePanel) wired into the Overview tab.
+
+### Pre-Test Checklist
+Before running tests, confirm:
+- [ ] Dev server started: `npm run dev`
+- [ ] Supabase local or cloud instance connected
+- [ ] Test user accounts exist (org admin + member from seed data)
+- [ ] **Migrations 021–024 already applied** (from Session 21)
+- [ ] Database types regenerated: `npm run db:types`
+
+---
+
+### TEST 1: Add Subject to Incident
+
+**Purpose:** Verify subjects can be added to an incident via the Overview tab
+**Tool:** Browser
+
+1. Log in as org admin, navigate to an active incident
+2. On the Overview tab, find the **Subject Information** section
+3. Click **Add Subject**
+4. Fill in First Name: `John`, Last Name: `Doe`, Age: `45`, Gender: `Male`, Type: `Lost Hiker`
+5. Click **Add Subject**
+
+**Expected:**
+- Dialog closes
+- Subject card appears showing "John Doe" with badge "Primary" (auto-primary since first subject)
+- Age, gender, and type displayed in muted text below the name
+
+[Pass]
+
+---
+
+### TEST 2: Edit Subject
+
+**Purpose:** Verify subject details can be updated
+**Tool:** Browser
+
+1. On the subject card from TEST 1, click **Edit**
+2. Change Age to `46`, add Physical Description: `Tall, brown hair, wearing hiking boots`
+3. Set Found Condition to `Alive - Uninjured`
+4. Click **Save Changes**
+
+**Expected:**
+- Dialog closes
+- Subject card updates with new age (46)
+- Found condition badge appears (green "Alive - Uninjured")
+- Physical description displayed below the name
+
+[Pass]
+
+---
+
+### TEST 3: Delete Subject
+
+**Purpose:** Verify subject soft-delete with confirmation
+**Tool:** Browser
+
+1. Add a second subject: `Jane Smith`, age 30
+2. Click **Remove** on Jane Smith
+3. Confirm the deletion in the AlertDialog
+
+**Expected:**
+- Jane Smith removed from the list
+- John Doe remains as the primary subject
+- If John was deleted first, Jane would become primary (auto-reassignment)
+
+[Pass]
+
+---
+
+### TEST 4: Assign ICS Role
+
+**Purpose:** Verify command structure role assignment
+**Tool:** Browser (must be logged in as IC)
+
+1. On the Overview tab, find the **Command Structure** section
+2. Click **Assign Role**
+3. Select a checked-in team member from the dropdown
+4. Select role: "Operations Section Chief"
+5. Click **Assign**
+
+**Expected:**
+- Dialog closes
+- New role card appears in the command structure grid showing the member name and role title
+- If the role was previously held by someone else, the old holder is relieved (appears in history)
+
+[Pass]
+
+---
+
+### TEST 5: IC Hand-Off
+
+**Purpose:** Verify IC transfer to another team member
+**Tool:** Browser (must be logged in as current IC)
+
+1. On the Overview tab, click **Hand Off IC**
+2. Select a different checked-in team member as New IC
+3. Select your new role: "Field Member" or "Observer" or "Stood Down"
+4. Click **Confirm Hand-Off**
+
+**Expected:**
+- Dialog closes
+- The new IC appears in the command structure under "Incident Commander"
+- The old IC is relieved and appears in the history section (click "Show history")
+- If "Stood Down" was selected, the old IC's personnel status should update to stood_down
+
+[Pass]
+
+---
+
+### TEST 6: Start New Operational Period
+
+**Purpose:** Verify operational period advancement
+**Tool:** Browser (must be IC or Planning Section Chief)
+
+1. On the Overview tab, find the **Operational Period** section
+2. Click **Start New Period**
+3. Enter Objectives: `Search sector B with ground teams` and Weather: `Clear, 18°C, light wind`
+4. Click **Start Period**
+
+**Expected:**
+- Dialog closes
+- Period number increments (e.g., from "Period 1" to "Period 2")
+- Objectives and weather summary displayed under the period header
+- Summary bar shows updated "Op Period 2"
+
+[Pass]
+
+---
+
+### TEST 7: Close Incident with Closure Checklist
+
+**Purpose:** Verify full closure checklist (QR deactivation, auto-checkout, period close)
+**Tool:** Browser + Supabase dashboard
+
+1. On an active incident with at least one checked-in person, one active QR token, and an open operational period
+2. Click **Close Incident**
+3. Add after-action notes: `Subject found safe at trailhead`
+4. Click **Close Incident** to confirm
+
+**Expected:**
+- Incident status changes to "Closed"
+- Status badge shows "Closed"
+- No more status change buttons visible
+- **In Supabase dashboard, verify:**
+  - `incident_qr_tokens.is_active` = false for all tokens on this incident
+  - `incident_personnel.checked_out_at` is set for all previously checked-in personnel
+  - `operational_periods.ends_at` is set for the previously open period
+
+[Pass]
+
+---
+
+### TEST 8: API Role Gating
+
+**Purpose:** Verify non-IC users cannot perform IC-only actions
+**Tool:** Browser DevTools or Postman
+
+1. Log in as a field member (not IC)
+2. Try to POST to `/api/incidents/{id}/command-structure` with a valid body
+
+**Expected:**
+- HTTP 403 with error code `AUTH_FORBIDDEN`
+- Message indicates only IC can assign roles
+
+---
+
+### TEST 9: Subject API Pagination
+
+**Purpose:** Verify subjects endpoint returns paginated results
+**Tool:** Browser DevTools or Postman
+
+1. Add 3+ subjects to an incident
+2. GET `/api/incidents/{id}/subjects?page=1&pageSize=2`
+
+**Expected:**
+- Response contains `data.subjects` with exactly 2 subjects
+- `meta.totalCount` equals total subjects
+- `meta.totalPages` calculated correctly
+- `meta.hasMore` is true
+
+---
+
+### TEST 10: All 247 Automated Tests Pass
+
+**Purpose:** Verify all unit tests pass
+**Tool:** Terminal
+
+1. Run `npx vitest run`
+
+**Expected:**
+- 31 test files pass
+- 247 tests pass
+- Zero failures
+
+---
+
+### Test Results
+
+- [ ] Test 1 — Add subject to incident
+- [ ] Test 2 — Edit subject
+- [ ] Test 3 — Delete subject
+- [ ] Test 4 — Assign ICS role
+- [ ] Test 5 — IC hand-off
+- [ ] Test 6 — Start new operational period
+- [ ] Test 7 — Close incident with closure checklist
+- [ ] Test 8 — API role gating (403 for non-IC)
+- [ ] Test 9 — Subject API pagination
+- [ ] Test 10 — All 247 automated tests pass
+
+Tested by: ______________ Date: __________
 
 ---

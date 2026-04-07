@@ -31,16 +31,16 @@
 --   admin@betasar.test      / TestPassword1!
 --
 -- Fixed UUIDs (used in Playwright tests):
---   Alpha SAR Org:    11111111-1111-1111-1111-111111111111
---   Beta SAR Org:     22222222-2222-2222-2222-222222222222
---   Admin user:       aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
---   IC user:          bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
---   Ops user:         cccccccc-cccc-cccc-cccc-cccccccccccc
---   Field user:       dddddddd-dddd-dddd-dddd-dddddddddddd
---   Observer user:    eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee
---   Beta Admin user:  ffffffff-ffff-ffff-ffff-ffffffffffff
---   Alpha Incident:   11110000-0000-0000-0000-000000000001
---   Alpha Resource:   11110000-0000-0000-0000-000000000002
+--   Alpha SAR Org:    11111111-1111-4111-8111-111111111111
+--   Beta SAR Org:     22222222-2222-4222-8222-222222222222
+--   Admin user:       aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+--   IC user:          bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+--   Ops user:         cccccccc-cccc-4ccc-8ccc-cccccccccccc
+--   Field user:       dddddddd-dddd-4ddd-8ddd-dddddddddddd
+--   Observer user:    eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee
+--   Beta Admin user:  ffffffff-ffff-4fff-8fff-ffffffffffff
+--   Alpha Incident:   11110000-0000-4000-8000-000000000001
+--   Alpha Resource:   11110000-0000-4000-8000-000000000002
 -- ===========================================================================
 
 -- Everything runs in a single transaction: if any statement fails,
@@ -57,8 +57,8 @@ BEGIN;
 CREATE TEMP TABLE _seed_member_ids AS
   SELECT om.id FROM organization_members om
   WHERE om.organization_id IN (
-    '11111111-1111-1111-1111-111111111111',
-    '22222222-2222-2222-2222-222222222222'
+    '11111111-1111-4111-8111-111111111111',
+    '22222222-2222-4222-8222-222222222222'
   )
   UNION
   SELECT om.id FROM organization_members om
@@ -70,90 +70,90 @@ CREATE TEMP TABLE _seed_member_ids AS
 
 -- 1. Delete PAR responses then PAR events (RESTRICT on initiated_by)
 DELETE FROM incident_par_responses WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 DELETE FROM incident_par_events WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 DELETE FROM incident_par_events WHERE initiated_by IN (SELECT id FROM _seed_member_ids);
 
 -- 2. Delete QR tokens (RESTRICT on created_by)
 DELETE FROM incident_qr_tokens WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 DELETE FROM incident_qr_tokens WHERE created_by IN (SELECT id FROM _seed_member_ids);
 
 -- 3. Delete invites (RESTRICT on invited_by)
 DELETE FROM organization_invites WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 DELETE FROM organization_invites WHERE invited_by IN (SELECT id FROM _seed_member_ids);
 
 -- 4. Delete incident resources (SET NULL on checked_out_by/checked_in_by — safe, but clean)
 DELETE FROM incident_resources WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 
 -- 5. Delete resources
 DELETE FROM resources WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
-DELETE FROM resources WHERE id = '11110000-0000-0000-0000-000000000002';
+DELETE FROM resources WHERE id = '11110000-0000-4000-8000-000000000002';
 
 -- 6. Delete incident command structure (SET NULL — safe, but clean)
 DELETE FROM incident_command_structure WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 
 -- 7. Delete audit log entries
 DELETE FROM audit_log WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 
 -- 8. Delete incident log entries
 DELETE FROM incident_log WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 
 -- 9. Delete incident personnel — must come before org member deletion
 --    (SET NULL on member_id would violate identity check constraint)
 DELETE FROM incident_personnel WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 DELETE FROM incident_personnel WHERE member_id IN (SELECT id FROM _seed_member_ids);
 
 -- 10. Delete incidents
 DELETE FROM incidents WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 
 -- 11. Delete team members (CASCADE — but explicit is clearer)
 DELETE FROM team_members WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 
 -- 12. Delete teams
 DELETE FROM teams WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 
 -- 13. Now safe to delete organization members
 DELETE FROM organization_members WHERE organization_id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 DELETE FROM organization_members WHERE user_id IN (
   SELECT id FROM auth.users WHERE email IN (
@@ -162,10 +162,16 @@ DELETE FROM organization_members WHERE user_id IN (
   )
 );
 
--- 14. Delete organizations
+-- 14. Delete subscriptions
+DELETE FROM subscriptions WHERE organization_id IN (
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
+);
+
+-- 15. Delete organizations
 DELETE FROM organizations WHERE id IN (
-  '11111111-1111-1111-1111-111111111111',
-  '22222222-2222-2222-2222-222222222222'
+  '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222'
 );
 DELETE FROM organizations WHERE slug IN ('alpha-sar', 'beta-sar');
 
@@ -182,10 +188,19 @@ DROP TABLE _seed_member_ids;
 
 INSERT INTO organizations (id, name, slug, unit_type, region, state, contact_email, contact_phone)
 VALUES
-  ('11111111-1111-1111-1111-111111111111', 'Alpha SAR Team', 'alpha-sar', 'sar',
+  ('11111111-1111-4111-8111-111111111111', 'Alpha SAR Team', 'alpha-sar', 'sar',
    'Pacific Northwest', 'WA', 'dispatch@alphasar.test', '555-0100'),
-  ('22222222-2222-2222-2222-222222222222', 'Beta SAR Team', 'beta-sar', 'sar',
+  ('22222222-2222-4222-8222-222222222222', 'Beta SAR Team', 'beta-sar', 'sar',
    'Mountain West', 'CO', 'dispatch@betasar.test', '555-0200');
+
+-- ===========================================================================
+-- 1b. SUBSCRIPTIONS (Free tier for both orgs — Feature 8a)
+-- ===========================================================================
+
+INSERT INTO subscriptions (organization_id, tier, status)
+VALUES
+  ('11111111-1111-4111-8111-111111111111', 'free', 'active'),
+  ('22222222-2222-4222-8222-222222222222', 'free', 'active');
 
 -- ===========================================================================
 -- 2. ORGANIZATION MEMBERS (5 in Alpha, 1 in Beta)
@@ -195,24 +210,24 @@ INSERT INTO organization_members (
   id, organization_id, user_id, role, display_name, phone, certifications, availability
 ) VALUES
   -- Alpha SAR: 5 members with different roles
-  ('aa000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111',
-   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'org_admin', 'Alice Admin',
+  ('aa000000-0000-4000-8000-000000000001', '11111111-1111-4111-8111-111111111111',
+   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'org_admin', 'Alice Admin',
    '555-0101', '{"SARTECH_II","WFA"}', 'available'),
-  ('aa000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111',
-   'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'member', 'Bob Commander',
+  ('aa000000-0000-4000-8000-000000000002', '11111111-1111-4111-8111-111111111111',
+   'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'member', 'Bob Commander',
    '555-0102', '{"SARTECH_I","EMT"}', 'available'),
-  ('aa000000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111',
-   'cccccccc-cccc-cccc-cccc-cccccccccccc', 'member', 'Carol Ops',
+  ('aa000000-0000-4000-8000-000000000003', '11111111-1111-4111-8111-111111111111',
+   'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'member', 'Carol Ops',
    '555-0103', '{"SARTECH_II"}', 'available'),
-  ('aa000000-0000-0000-0000-000000000004', '11111111-1111-1111-1111-111111111111',
-   'dddddddd-dddd-dddd-dddd-dddddddddddd', 'member', 'Dave Field',
+  ('aa000000-0000-4000-8000-000000000004', '11111111-1111-4111-8111-111111111111',
+   'dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'member', 'Dave Field',
    '555-0104', '{}', 'available'),
-  ('aa000000-0000-0000-0000-000000000005', '11111111-1111-1111-1111-111111111111',
-   'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'member', 'Eve Observer',
+  ('aa000000-0000-4000-8000-000000000005', '11111111-1111-4111-8111-111111111111',
+   'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', 'member', 'Eve Observer',
    '555-0105', '{}', 'on_call'),
   -- Beta SAR: 1 admin (for cross-org isolation testing)
-  ('bb000000-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222',
-   'ffffffff-ffff-ffff-ffff-ffffffffffff', 'org_admin', 'Frank Beta',
+  ('bb000000-0000-4000-8000-000000000001', '22222222-2222-4222-8222-222222222222',
+   'ffffffff-ffff-4fff-8fff-ffffffffffff', 'org_admin', 'Frank Beta',
    '555-0201', '{"SARTECH_III"}', 'available');
 
 -- ===========================================================================
@@ -223,14 +238,29 @@ INSERT INTO incidents (
   id, organization_id, name, incident_number, incident_type, status,
   location_address, started_at
 ) VALUES (
-  '11110000-0000-0000-0000-000000000001',
-  '11111111-1111-1111-1111-111111111111',
+  '11110000-0000-4000-8000-000000000001',
+  '11111111-1111-4111-8111-111111111111',
   'Lost Hiker — Mt. Rainier Trail',
   'ALPHA-2026-001',
   'lost_person',
   'active',
   'Mt. Rainier National Park, Sunrise Trailhead, WA',
   now() - INTERVAL '4 hours'
+);
+
+-- ===========================================================================
+-- 3a. OPERATIONAL PERIOD (Period 1 for the seeded incident)
+-- ===========================================================================
+
+INSERT INTO operational_periods (
+  id, incident_id, organization_id, period_number, starts_at, created_by
+) VALUES (
+  '11110000-0000-4000-8000-0000000000a1',
+  '11110000-0000-4000-8000-000000000001',
+  '11111111-1111-4111-8111-111111111111',
+  1,
+  now() - INTERVAL '4 hours',
+  'aa000000-0000-4000-8000-000000000001'
 );
 
 -- ===========================================================================
@@ -243,18 +273,18 @@ INSERT INTO incident_personnel (
 ) VALUES
   -- Alice Admin acting as Incident Commander
   (
-    'ab000000-0000-0000-0000-000000000001',
-    '11110000-0000-0000-0000-000000000001',
-    '11111111-1111-1111-1111-111111111111',
-    'aa000000-0000-0000-0000-000000000001',
+    'ab000000-0000-4000-8000-000000000001',
+    '11110000-0000-4000-8000-000000000001',
+    '11111111-1111-4111-8111-111111111111',
+    'aa000000-0000-4000-8000-000000000001',
     'member', 'manual', 'available', 'incident_commander'
   ),
   -- Dave Field as field member, currently in the field
   (
-    'ab000000-0000-0000-0000-000000000002',
-    '11110000-0000-0000-0000-000000000001',
-    '11111111-1111-1111-1111-111111111111',
-    'aa000000-0000-0000-0000-000000000004',
+    'ab000000-0000-4000-8000-000000000002',
+    '11110000-0000-4000-8000-000000000001',
+    '11111111-1111-4111-8111-111111111111',
+    'aa000000-0000-4000-8000-000000000004',
     'member', 'manual', 'in_field', 'field_member'
   );
 
@@ -266,11 +296,11 @@ INSERT INTO incident_log (
   incident_id, organization_id, entry_type, message,
   actor_id, actor_name, metadata
 ) VALUES (
-  '11110000-0000-0000-0000-000000000001',
-  '11111111-1111-1111-1111-111111111111',
+  '11110000-0000-4000-8000-000000000001',
+  '11111111-1111-4111-8111-111111111111',
   'incident_status_change',
   'Incident created: Lost Hiker — Mt. Rainier Trail',
-  'aa000000-0000-0000-0000-000000000001',
+  'aa000000-0000-4000-8000-000000000001',
   'Alice Admin',
   '{"from_status": null, "to_status": "active"}'
 );
@@ -283,12 +313,12 @@ INSERT INTO audit_log (
   organization_id, actor_id, actor_email, action,
   resource_type, resource_id, metadata
 ) VALUES (
-  '11111111-1111-1111-1111-111111111111',
-  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  '11111111-1111-4111-8111-111111111111',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   'admin@alphasar.test',
   'incident.created',
   'incident',
-  '11110000-0000-0000-0000-000000000001',
+  '11110000-0000-4000-8000-000000000001',
   '{"incident_name": "Lost Hiker — Mt. Rainier Trail", "incident_type": "lost_person"}'
 );
 
@@ -299,8 +329,8 @@ INSERT INTO audit_log (
 INSERT INTO resources (
   id, organization_id, name, category, identifier, status, notes
 ) VALUES (
-  '11110000-0000-0000-0000-000000000002',
-  '11111111-1111-1111-1111-111111111111',
+  '11110000-0000-4000-8000-000000000002',
+  '11111111-1111-4111-8111-111111111111',
   'Command Vehicle 1',
   'vehicle',
   'ALPHA-CV-01',
